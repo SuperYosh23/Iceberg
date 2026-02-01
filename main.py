@@ -677,8 +677,20 @@ class TitanicLauncher(ctk.CTk):
             self.launch_btn.configure(state="disabled", text="Launching...")
             self.update()
             
+            # Find osu-wine executable path
+            osuwine_cmd = self.find_osuwine_executable()
+            if not osuwine_cmd:
+                messagebox.showerror(
+                    "Error", 
+                    "osu-wine not found!\n\n"
+                    "Please install osu-wine first:\n"
+                    "1. Go to Options → Download osu-wine\n"
+                    "2. Or install manually from https://github.com/NelloKudo/osu-winello"
+                )
+                return
+            
             # Build command with custom arguments
-            cmd = ["osu-wine", "--wine", osu_exe]
+            cmd = [osuwine_cmd, "--wine", osu_exe]
             
             # Add launch arguments if specified
             if config['launch_args']:
@@ -1120,14 +1132,78 @@ class TitanicLauncher(ctk.CTk):
     def check_osuwine_installed(self):
         """Check if osu-wine is installed"""
         try:
-            result = subprocess.run(["osu-wine", "--help"], 
-                                  capture_output=True, 
-                                  text=True, 
-                                  timeout=5)
-            # Check if the command ran successfully and returned help text
-            return result.returncode == 0 and "osu-wine" in result.stdout.lower()
-        except (subprocess.TimeoutExpired, FileNotFoundError, subprocess.CalledProcessError):
+            # Try multiple methods to find osu-wine
+            import shutil
+            
+            # Method 1: Check if command exists in PATH
+            osuwine_path = shutil.which("osu-wine")
+            if osuwine_path:
+                result = subprocess.run(["osu-wine", "--help"], 
+                                      capture_output=True, 
+                                      text=True, 
+                                      timeout=5)
+                return result.returncode == 0 and "osu-wine" in result.stdout.lower()
+            
+            # Method 2: Check common installation paths (for bundled executables)
+            common_paths = [
+                "/usr/local/bin/osu-wine",
+                "/usr/bin/osu-wine",
+                os.path.expanduser("~/.local/bin/osu-wine"),
+                os.path.expanduser("~/bin/osu-wine")
+            ]
+            
+            for path in common_paths:
+                if os.path.exists(path) and os.access(path, os.X_OK):
+                    result = subprocess.run([path, "--help"], 
+                                          capture_output=True, 
+                                          text=True, 
+                                          timeout=5)
+                    if result.returncode == 0 and "osu-wine" in result.stdout.lower():
+                        return True
+            
             return False
+            
+        except (subprocess.TimeoutExpired, FileNotFoundError, subprocess.CalledProcessError, ImportError):
+            return False
+
+    def find_osuwine_executable(self):
+        """Find the full path to osu-wine executable"""
+        try:
+            import shutil
+            
+            # Method 1: Check if command exists in PATH
+            osuwine_path = shutil.which("osu-wine")
+            if osuwine_path:
+                return osuwine_path
+            
+            # Method 2: Check common installation paths
+            common_paths = [
+                "/usr/local/bin/osu-wine",
+                "/usr/bin/osu-wine",
+                os.path.expanduser("~/.local/bin/osu-wine"),
+                os.path.expanduser("~/bin/osu-wine")
+            ]
+            
+            for path in common_paths:
+                if os.path.exists(path) and os.access(path, os.X_OK):
+                    return path
+            
+            return None
+            
+        except ImportError:
+            # Fallback without shutil
+            common_paths = [
+                "/usr/local/bin/osu-wine",
+                "/usr/bin/osu-wine",
+                os.path.expanduser("~/.local/bin/osu-wine"),
+                os.path.expanduser("~/bin/osu-wine")
+            ]
+            
+            for path in common_paths:
+                if os.path.exists(path) and os.access(path, os.X_OK):
+                    return path
+            
+            return None
 
     def install_osuwine(self):
         """Install osu-wine in background thread"""
@@ -1155,25 +1231,67 @@ class TitanicLauncher(ctk.CTk):
             script_path = os.path.join(clone_path, "osu-winello.sh")
             subprocess.run(["chmod", "+x", script_path], check=True)
             
-            # Run installation script
+            # Run installation script with proper environment
             self.after(0, lambda: self.status_text.set("Running osu-wine installation..."))
+            
+            # Set up environment for proper PATH handling
+            env = os.environ.copy()
+            
+            # Try to install to user's local bin directory
             install_result = subprocess.run([
                 "./osu-winello.sh"
-            ], cwd=clone_path, capture_output=True, text=True, timeout=300)  # 5 minute timeout
+            ], cwd=clone_path, capture_output=True, text=True, timeout=300, env=env)  # 5 minute timeout
             
             if install_result.returncode != 0:
-                raise Exception(f"Installation failed: {install_result.stderr}")
+                # Try alternative installation method
+                self.after(0, lambda: self.status_text.set("Trying alternative installation..."))
+                
+                # Try manual installation to user bin directory
+                user_bin = os.path.expanduser("~/.local/bin")
+                os.makedirs(user_bin, exist_ok=True)
+                
+                # Create a simple installation script
+                install_script = f"""
+#!/bin/bash
+set -e
+
+echo "Installing osu-wine to {user_bin}..."
+
+# Download osu-wine script
+curl -fsSL https://raw.githubusercontent.com/NelloKudo/osu-winello/main/osu-wine.sh -o {user_bin}/osu-wine
+chmod +x {user_bin}/osu-wine
+
+# Add to PATH if not already there
+if ! echo $PATH | grep -q "{user_bin}"; then
+    echo 'export PATH="$PATH:{user_bin}"' >> ~/.bashrc
+    echo 'export PATH="$PATH:{user_bin}"' >> ~/.profile
+fi
+
+echo "Installation complete! Please restart your terminal or run:"
+echo "export PATH=\"$PATH:{user_bin}\""
+"""
+                
+                alt_install_result = subprocess.run(["bash", "-c", install_script], 
+                                                  capture_output=True, text=True, timeout=120)
+                
+                if alt_install_result.returncode != 0:
+                    raise Exception(f"Both installation methods failed. Manual: {alt_install_result.stderr}")
             
             # Clean up temporary directory
             shutil.rmtree(temp_dir, ignore_errors=True)
             
             # Update UI to show success
             self.after(0, lambda: self.status_text.set("osu-wine installed successfully!"))
-            self.after(0, lambda: messagebox.showinfo(
-                "Installation Complete", 
-                "osu-wine has been successfully installed!\n\n"
-                "You can now launch Titanic clients using the launcher."
-            ))
+            
+            # Show success message with PATH instructions
+            success_msg = ("osu-wine has been successfully installed!\n\n"
+                          "If you still get 'not found' errors, you may need to:\n"
+                          "1. Restart the launcher\n"
+                          "2. Or restart your terminal\n"
+                          "3. Or run: export PATH=\"$PATH:~/.local/bin\"\n\n"
+                          "You can now launch Titanic clients using the launcher.")
+            
+            self.after(0, lambda: messagebox.showinfo("Installation Complete", success_msg))
             
             # Update button state
             self.after(0, self.update_osuwine_button_state)
@@ -1182,14 +1300,20 @@ class TitanicLauncher(ctk.CTk):
             self.after(0, lambda: self.status_text.set("Installation timed out"))
             self.after(0, lambda: messagebox.showerror(
                 "Installation Failed", 
-                "Installation timed out. Please try again or install manually."
+                "Installation timed out. Please try again or install manually.\n\n"
+                "Manual installation:\n"
+                "1. Visit: https://github.com/NelloKudo/osu-winello\n"
+                "2. Follow the installation instructions"
             ))
         except Exception as e:
             self.after(0, lambda: self.status_text.set(f"Installation failed: {str(e)}"))
             self.after(0, lambda: messagebox.showerror(
                 "Installation Failed", 
                 f"Failed to install osu-wine:\n{str(e)}\n\n"
-                "Please try installing manually."
+                "Manual installation:\n"
+                "1. Visit: https://github.com/NelloKudo/osu-winello\n"
+                "2. Follow the installation instructions\n\n"
+                "After installation, restart the launcher."
             ))
         finally:
             # Clean up temporary directory
