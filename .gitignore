@@ -32,6 +32,7 @@ MANIFEST
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
 *.spec
+hooks/
 
 # Installer logs
 pip-log.txt
@@ -155,3 +156,7 @@ config.json
 versions/
 osu!.exe
 *.log
+
+# Build and run files
+run_iceberg.sh
+launcher.py
