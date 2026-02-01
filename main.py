@@ -14,6 +14,7 @@ from bs4 import BeautifulSoup
 import sys
 from PIL import Image, ImageTk
 import io
+import tempfile
 
 # Set appearance mode and color theme
 ctk.set_appearance_mode("dark")
@@ -71,6 +72,10 @@ class TitanicLauncher(ctk.CTk):
         self.logo_label.grid(row=0, column=0, pady=(20, 5))
         ctk.CTkLabel(self.sidebar_frame, text="ICEBERG", font=ctk.CTkFont(size=26, weight="bold")).grid(row=1, column=0, pady=(0, 20))
         ctk.CTkLabel(self.sidebar_frame, text="Reviving old osu!", font=ctk.CTkFont(size=12), text_color="gray").grid(row=2, column=0, pady=(0, 10))
+        
+        # Logo configuration
+        self.logo_path = os.path.join(os.path.dirname(__file__), "logo.png")
+        self.logo_url = None
 
         # Version list with scroll wheel support
         self.scrollable_list = ctk.CTkScrollableFrame(self.sidebar_frame, label_text="Installed Versions")
@@ -105,25 +110,76 @@ class TitanicLauncher(ctk.CTk):
         self.content_frame = ctk.CTkFrame(self.main_frame)
         self.content_frame.pack(fill="both", expand=True, padx=20, pady=10)
         
-        # Version details section
+        # Version details section (collapsible)
         self.details_frame = ctk.CTkFrame(self.content_frame)
         self.details_frame.pack(fill="both", expand=True, padx=20, pady=10)
         
-        # Version description
-        self.description_text = ctk.CTkTextbox(self.details_frame, height=200, font=ctk.CTkFont(size=12))
-        self.description_text.pack(fill="both", expand=True, padx=20, pady=20)
+        # Collapsible header for version details
+        self.details_header_frame = ctk.CTkFrame(self.details_frame)
+        self.details_header_frame.pack(fill="x", padx=10, pady=(10, 5))
+        self.details_header_frame.grid_columnconfigure(1, weight=1)
+        
+        self.details_toggle_btn = ctk.CTkButton(
+            self.details_header_frame,
+            text="▼",
+            width=30,
+            fg_color="transparent",
+            text_color=("gray10", "gray90"),
+            hover_color=("gray70", "gray30"),
+            command=self.toggle_details_section
+        )
+        self.details_toggle_btn.grid(row=0, column=0, padx=5, pady=5)
+        
+        self.details_title_label = ctk.CTkLabel(
+            self.details_header_frame,
+            text="Version Information",
+            font=ctk.CTkFont(size=16, weight="bold")
+        )
+        self.details_title_label.grid(row=0, column=1, sticky="w", padx=5, pady=5)
+        
+        # Collapsible content for version details
+        self.details_content_frame = ctk.CTkFrame(self.details_frame)
+        self.details_content_frame.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+        
+        self.description_text = ctk.CTkTextbox(self.details_content_frame, height=200, font=ctk.CTkFont(size=12))
+        self.description_text.pack(fill="both", expand=True, padx=10, pady=10)
         self.description_text.insert("0.0", "Select a version to see details...")
         self.description_text.configure(state="disabled")
         
-        # Version settings
+        # Version settings section (collapsible)
         self.settings_frame = ctk.CTkFrame(self.content_frame)
         self.settings_frame.pack(fill="x", padx=20, pady=(0, 20))
         
-        ctk.CTkLabel(self.settings_frame, text="Version Settings", font=ctk.CTkFont(size=18, weight="bold")).pack(pady=(10, 5))
+        # Collapsible header for version settings
+        self.settings_header_frame = ctk.CTkFrame(self.settings_frame)
+        self.settings_header_frame.pack(fill="x", padx=10, pady=(10, 5))
+        self.settings_header_frame.grid_columnconfigure(1, weight=1)
+        
+        self.settings_toggle_btn = ctk.CTkButton(
+            self.settings_header_frame,
+            text="▼",
+            width=30,
+            fg_color="transparent",
+            text_color=("gray10", "gray90"),
+            hover_color=("gray70", "gray30"),
+            command=self.toggle_settings_section
+        )
+        self.settings_toggle_btn.grid(row=0, column=0, padx=5, pady=5)
+        
+        self.settings_title_label = ctk.CTkLabel(
+            self.settings_header_frame,
+            text="Version Settings",
+            font=ctk.CTkFont(size=16, weight="bold")
+        )
+        self.settings_title_label.grid(row=0, column=1, sticky="w", padx=5, pady=5)
+        
+        # Collapsible content for version settings
+        self.settings_content_frame = ctk.CTkFrame(self.settings_frame)
+        self.settings_content_frame.pack(fill="x", padx=10, pady=(0, 10))
         
         # Settings form
-        self.settings_form = ctk.CTkFrame(self.settings_frame)
-        self.settings_form.pack(fill="x", padx=20, pady=10)
+        self.settings_form = ctk.CTkFrame(self.settings_content_frame)
+        self.settings_form.pack(fill="x", padx=10, pady=10)
         
         # Custom name
         ctk.CTkLabel(self.settings_form, text="Custom Name:", font=ctk.CTkFont(weight="bold")).pack(anchor="w", pady=(10, 2))
@@ -140,8 +196,8 @@ class TitanicLauncher(ctk.CTk):
         self.save_settings_btn.pack(pady=10)
         
         # Help text
-        help_text = ctk.CTkTextbox(self.settings_form, height=120, font=ctk.CTkFont(size=10))
-        help_text.pack(fill="x", pady=(10, 20))
+        help_text = ctk.CTkTextbox(self.settings_content_frame, height=120, font=ctk.CTkFont(size=10))
+        help_text.pack(fill="x", pady=(10, 10))
         help_text.insert("0.0", 
             "Launch Arguments: Additional arguments passed to osu!.exe\n\n"
             "Examples:\n"
@@ -149,6 +205,10 @@ class TitanicLauncher(ctk.CTk):
             "Changes are saved automatically when you click Save Settings."
         )
         help_text.configure(state="disabled")
+        
+        # Track collapse states
+        self.details_collapsed = False
+        self.settings_collapsed = False
 
         # Progress section
         ctk.CTkLabel(self.settings_frame, text="Download Progress").pack(anchor="w", padx=20, pady=(10, 0))
@@ -462,22 +522,20 @@ class TitanicLauncher(ctk.CTk):
             canvas.yview_scroll(int(delta), "units")
 
     def download_logo(self):
-        """Download and set the logo"""
+        """Load and set the logo from local file"""
         try:
-            if not os.path.exists(self.logo_path):
-                response = requests.get(self.logo_url, timeout=10)
-                if response.status_code == 200:
-                    # Convert SVG to PNG using PIL (fallback to simple text if SVG conversion fails)
-                    try:
-                        # For SVG, we'll create a simple text-based logo as fallback
-                        # In a real implementation, you might want to use a proper SVG converter
-                        img = Image.new('RGBA', (60, 60), (0, 0, 0, 0))
-                        self.logo_image = ctk.CTkImage(light_image=img, dark_image=img, size=(60, 60))
-                        self.after(0, self.update_logo)
-                    except:
-                        pass
+            if os.path.exists(self.logo_path):
+                # Load logo from local file
+                img = Image.open(self.logo_path)
+                # Resize to appropriate size for sidebar
+                img = img.resize((60, 60), Image.Resampling.LANCZOS)
+                self.logo_image = ctk.CTkImage(light_image=img, dark_image=img, size=(60, 60))
+                self.after(0, self.update_logo)
+            else:
+                # If logo.png doesn't exist, keep the emoji
+                print(f"Logo file not found at {self.logo_path}, keeping emoji")
         except Exception as e:
-            print(f"Failed to download logo: {e}")
+            print(f"Failed to load logo: {e}")
 
     def update_logo(self):
         """Update the logo display"""
@@ -994,15 +1052,18 @@ class TitanicLauncher(ctk.CTk):
         
         ctk.CTkLabel(tools_frame, text="Tools", font=ctk.CTkFont(size=18, weight="bold")).pack(anchor="w", padx=10, pady=(10, 5))
         
-        # osu-wine download button (placeholder for now)
-        osuwine_btn = ctk.CTkButton(
+        # osu-wine download button
+        self.osuwine_btn = ctk.CTkButton(
             tools_frame,
             text="📥 Download osu-wine",
             fg_color="#ff6b35",
             hover_color="#e55a2b",
             command=self.download_osuwine_placeholder
         )
-        osuwine_btn.pack(fill="x", padx=10, pady=5)
+        self.osuwine_btn.pack(fill="x", padx=10, pady=5)
+        
+        # Update button state based on installation status
+        self.update_osuwine_button_state()
         
         # Help text
         help_text = ctk.CTkTextbox(main_frame, height=80, font=ctk.CTkFont(size=10))
@@ -1010,7 +1071,7 @@ class TitanicLauncher(ctk.CTk):
         help_text.insert("0.0", 
             "Theme: Switch between dark and light modes\n"
             "Accent Color: Change the primary color theme\n"
-            "osu-wine: Download the osu-wine launcher (coming soon)"
+            "osu-wine: Download the osu-wine launcher for running Titanic clients"
         )
         help_text.configure(state="disabled")
         
@@ -1038,8 +1099,122 @@ class TitanicLauncher(ctk.CTk):
         messagebox.showinfo("Color Changed", f"Accent color changed to {color}.\nRestart the launcher for full effect.")
 
     def download_osuwine_placeholder(self):
-        """Placeholder for osu-wine download functionality"""
-        messagebox.showinfo("Coming Soon", "osu-wine download functionality will be available in the next update!")
+        """Install osu-wine automatically"""
+        # Check if osu-wine is already installed
+        if self.check_osuwine_installed():
+            messagebox.showinfo("Already Installed", "osu-wine is already installed on your system!")
+            return
+        
+        # Ask for confirmation
+        if not messagebox.askyesno("Install osu-wine", 
+            "This will download and install osu-wine.\n\n"
+            "The installation will:\n"
+            "1. Clone the osu-winello repository\n"
+            "2. Run the installation script\n\n"
+            "Continue?"):
+            return
+        
+        # Start installation in background thread
+        threading.Thread(target=self.install_osuwine, daemon=True).start()
+
+    def check_osuwine_installed(self):
+        """Check if osu-wine is installed"""
+        try:
+            result = subprocess.run(["osu-wine", "--help"], 
+                                  capture_output=True, 
+                                  text=True, 
+                                  timeout=5)
+            # Check if the command ran successfully and returned help text
+            return result.returncode == 0 and "osu-wine" in result.stdout.lower()
+        except (subprocess.TimeoutExpired, FileNotFoundError, subprocess.CalledProcessError):
+            return False
+
+    def install_osuwine(self):
+        """Install osu-wine in background thread"""
+        try:
+            # Update UI to show installation in progress
+            self.after(0, lambda: self.status_text.set("Installing osu-wine..."))
+            
+            # Create temporary directory for installation
+            temp_dir = tempfile.mkdtemp()
+            clone_path = os.path.join(temp_dir, "osu-winello")
+            
+            # Clone the repository
+            self.after(0, lambda: self.status_text.set("Cloning osu-winello repository..."))
+            clone_result = subprocess.run([
+                "git", "clone", 
+                "https://github.com/NelloKudo/osu-winello.git",
+                clone_path
+            ], capture_output=True, text=True, timeout=60)
+            
+            if clone_result.returncode != 0:
+                raise Exception(f"Failed to clone repository: {clone_result.stderr}")
+            
+            # Make script executable
+            self.after(0, lambda: self.status_text.set("Preparing installation script..."))
+            script_path = os.path.join(clone_path, "osu-winello.sh")
+            subprocess.run(["chmod", "+x", script_path], check=True)
+            
+            # Run installation script
+            self.after(0, lambda: self.status_text.set("Running osu-wine installation..."))
+            install_result = subprocess.run([
+                "./osu-winello.sh"
+            ], cwd=clone_path, capture_output=True, text=True, timeout=300)  # 5 minute timeout
+            
+            if install_result.returncode != 0:
+                raise Exception(f"Installation failed: {install_result.stderr}")
+            
+            # Clean up temporary directory
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            
+            # Update UI to show success
+            self.after(0, lambda: self.status_text.set("osu-wine installed successfully!"))
+            self.after(0, lambda: messagebox.showinfo(
+                "Installation Complete", 
+                "osu-wine has been successfully installed!\n\n"
+                "You can now launch Titanic clients using the launcher."
+            ))
+            
+            # Update button state
+            self.after(0, self.update_osuwine_button_state)
+            
+        except subprocess.TimeoutExpired:
+            self.after(0, lambda: self.status_text.set("Installation timed out"))
+            self.after(0, lambda: messagebox.showerror(
+                "Installation Failed", 
+                "Installation timed out. Please try again or install manually."
+            ))
+        except Exception as e:
+            self.after(0, lambda: self.status_text.set(f"Installation failed: {str(e)}"))
+            self.after(0, lambda: messagebox.showerror(
+                "Installation Failed", 
+                f"Failed to install osu-wine:\n{str(e)}\n\n"
+                "Please try installing manually."
+            ))
+        finally:
+            # Clean up temporary directory
+            try:
+                if 'temp_dir' in locals():
+                    shutil.rmtree(temp_dir, ignore_errors=True)
+            except:
+                pass
+
+    def update_osuwine_button_state(self):
+        """Update osu-wine button state based on installation status"""
+        if hasattr(self, 'osuwine_btn'):
+            if self.check_osuwine_installed():
+                self.osuwine_btn.configure(
+                    text="✓ osu-wine Installed",
+                    fg_color="#28a745",
+                    state="disabled"
+                )
+            else:
+                self.osuwine_btn.configure(
+                    text="📥 Download osu-wine",
+                    fg_color="#ff6b35",
+                    hover_color="#e55a2b",
+                    state="normal"
+                )
 
     def save_options_config(self):
         """Save options configuration"""
@@ -1078,6 +1253,32 @@ class TitanicLauncher(ctk.CTk):
                 ctk.set_default_color_theme(self.accent_color.get())
         except Exception as e:
             print(f"Failed to load options config: {e}")
+
+    def toggle_details_section(self):
+        """Toggle collapse state of version details section"""
+        if self.details_collapsed:
+            # Expand
+            self.details_content_frame.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+            self.details_toggle_btn.configure(text="▼")
+            self.details_collapsed = False
+        else:
+            # Collapse
+            self.details_content_frame.pack_forget()
+            self.details_toggle_btn.configure(text="▶")
+            self.details_collapsed = True
+
+    def toggle_settings_section(self):
+        """Toggle collapse state of version settings section"""
+        if self.settings_collapsed:
+            # Expand
+            self.settings_content_frame.pack(fill="x", padx=10, pady=(0, 10))
+            self.settings_toggle_btn.configure(text="▼")
+            self.settings_collapsed = False
+        else:
+            # Collapse
+            self.settings_content_frame.pack_forget()
+            self.settings_toggle_btn.configure(text="▶")
+            self.settings_collapsed = True
 
     def get_directory_size(self, path):
         """Calculate total size of a directory"""
