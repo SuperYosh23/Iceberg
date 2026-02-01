@@ -1,0 +1,1141 @@
+#!/usr/bin/env python3
+import customtkinter as ctk
+from tkinter import messagebox, filedialog
+import requests
+import os
+import subprocess
+import threading
+import zipfile
+import json
+import re
+from urllib.parse import urljoin
+import shutil
+from bs4 import BeautifulSoup
+import sys
+from PIL import Image, ImageTk
+import io
+
+# Set appearance mode and color theme
+ctk.set_appearance_mode("dark")
+ctk.set_default_color_theme("blue")
+
+class TitanicLauncher(ctk.CTk):
+    def __init__(self):
+        super().__init__()
+        self.title("Iceberg Launcher")
+        self.geometry("1000x700")
+
+        # Configuration
+        self.titanic_base_url = "https://osu.titanic.sh/"
+        self.versions_dir = os.path.expanduser("~/.titaniclauncher")
+        self.config_file = os.path.join(self.versions_dir, "config.json")
+        self.logo_path = os.path.join(self.versions_dir, "logo.png")
+        self.logo_url = "https://osu.titanic.sh/images/logo/main-vector.min.svg"
+        
+        # Ensure versions directory exists
+        os.makedirs(self.versions_dir, exist_ok=True)
+        
+        # Variables
+        self.versions = []
+        self.download_links = {}
+        self.version_descriptions = {}
+        self.version_images = {}
+        self.version_configs = {}  # Per-version configuration
+        self.selected_version = ctk.StringVar()
+        self.download_progress = ctk.DoubleVar()
+        self.status_text = ctk.StringVar(value="Ready")
+        self.current_version_name = None
+        self.logo_image = None
+        
+        # Options variables
+        self.appearance_mode = ctk.StringVar(value="dark")
+        self.accent_color = ctk.StringVar(value="blue")
+        
+        # Grid configuration
+        self.grid_columnconfigure(1, weight=1)
+        self.grid_rowconfigure(0, weight=1)
+
+        self.setup_ui()
+        self.load_options_config()
+        self.load_config()
+        self.load_versions()
+
+    def setup_ui(self):
+        # === SIDEBAR ===
+        self.sidebar_frame = ctk.CTkFrame(self, width=250, corner_radius=0)
+        self.sidebar_frame.grid(row=0, column=0, sticky="nsew")
+        self.sidebar_frame.grid_rowconfigure(3, weight=1)
+
+        # Logo/Title
+        self.logo_label = ctk.CTkLabel(self.sidebar_frame, text="🚢", font=ctk.CTkFont(size=32, weight="bold"))
+        self.logo_label.grid(row=0, column=0, pady=(20, 5))
+        ctk.CTkLabel(self.sidebar_frame, text="ICEBERG", font=ctk.CTkFont(size=26, weight="bold")).grid(row=1, column=0, pady=(0, 20))
+        ctk.CTkLabel(self.sidebar_frame, text="Reviving old osu!", font=ctk.CTkFont(size=12), text_color="gray").grid(row=2, column=0, pady=(0, 10))
+
+        # Version list with scroll wheel support
+        self.scrollable_list = ctk.CTkScrollableFrame(self.sidebar_frame, label_text="Installed Versions")
+        self.scrollable_list.grid(row=3, column=0, padx=15, pady=10, sticky="nsew")
+        
+        # Enable scroll wheel support
+        self.scrollable_list.bind("<MouseWheel>", self._on_mousewheel)
+        self.scrollable_list.bind("<Button-4>", self._on_mousewheel)  # Linux scroll up
+        self.scrollable_list.bind("<Button-5>", self._on_mousewheel)  # Linux scroll down
+
+        # Action buttons
+        self.download_clients_btn = ctk.CTkButton(self.sidebar_frame, text="📥 Download Clients", command=self.open_download_dialog, fg_color="#1bd964", hover_color="#15a34a", text_color="black")
+        self.download_clients_btn.grid(row=4, column=0, padx=20, pady=5)
+        
+        self.options_btn = ctk.CTkButton(self.sidebar_frame, text="⚙️ Options", command=self.open_options_dialog, fg_color="#6c757d")
+        self.options_btn.grid(row=5, column=0, padx=20, pady=5)
+        
+        self.refresh_btn = ctk.CTkButton(self.sidebar_frame, text="🔄 Refresh Versions", command=self.load_versions, fg_color="gray25")
+        self.refresh_btn.grid(row=6, column=0, padx=20, pady=5)
+
+        self.delete_btn = ctk.CTkButton(self.sidebar_frame, text="🗑️ Delete Version", fg_color="#cf3838", hover_color="#8a2525", command=self.delete_version)
+        self.delete_btn.grid(row=7, column=0, padx=20, pady=(5, 20))
+
+        # === MAIN PANEL ===
+        self.main_frame = ctk.CTkFrame(self, corner_radius=0, fg_color="transparent")
+        self.main_frame.grid(row=0, column=1, sticky="nsew", padx=30, pady=30)
+
+        self.header_label = ctk.CTkLabel(self.main_frame, text="Select a Version", font=ctk.CTkFont(size=32, weight="bold"))
+        self.header_label.pack(pady=(10, 20))
+
+        # Single column layout for installed versions
+        self.content_frame = ctk.CTkFrame(self.main_frame)
+        self.content_frame.pack(fill="both", expand=True, padx=20, pady=10)
+        
+        # Version details section
+        self.details_frame = ctk.CTkFrame(self.content_frame)
+        self.details_frame.pack(fill="both", expand=True, padx=20, pady=10)
+        
+        # Version description
+        self.description_text = ctk.CTkTextbox(self.details_frame, height=200, font=ctk.CTkFont(size=12))
+        self.description_text.pack(fill="both", expand=True, padx=20, pady=20)
+        self.description_text.insert("0.0", "Select a version to see details...")
+        self.description_text.configure(state="disabled")
+        
+        # Version settings
+        self.settings_frame = ctk.CTkFrame(self.content_frame)
+        self.settings_frame.pack(fill="x", padx=20, pady=(0, 20))
+        
+        ctk.CTkLabel(self.settings_frame, text="Version Settings", font=ctk.CTkFont(size=18, weight="bold")).pack(pady=(10, 5))
+        
+        # Settings form
+        self.settings_form = ctk.CTkFrame(self.settings_frame)
+        self.settings_form.pack(fill="x", padx=20, pady=10)
+        
+        # Custom name
+        ctk.CTkLabel(self.settings_form, text="Custom Name:", font=ctk.CTkFont(weight="bold")).pack(anchor="w", pady=(10, 2))
+        self.name_entry = ctk.CTkEntry(self.settings_form, width=250)
+        self.name_entry.pack(fill="x", pady=(0, 10))
+        
+        # Launch arguments
+        ctk.CTkLabel(self.settings_form, text="Launch Arguments:", font=ctk.CTkFont(weight="bold")).pack(anchor="w", pady=(10, 2))
+        self.launch_args_entry = ctk.CTkEntry(self.settings_form, width=250)
+        self.launch_args_entry.pack(fill="x", pady=(0, 10))
+        
+        # Save button
+        self.save_settings_btn = ctk.CTkButton(self.settings_form, text="💾 Save Settings", command=self.save_current_version_settings, fg_color="#28a745")
+        self.save_settings_btn.pack(pady=10)
+        
+        # Help text
+        help_text = ctk.CTkTextbox(self.settings_form, height=120, font=ctk.CTkFont(size=10))
+        help_text.pack(fill="x", pady=(10, 20))
+        help_text.insert("0.0", 
+            "Launch Arguments: Additional arguments passed to osu!.exe\n\n"
+            "Examples:\n"
+            "Launch: -fullscreen -noaudio\n\n"
+            "Changes are saved automatically when you click Save Settings."
+        )
+        help_text.configure(state="disabled")
+
+        # Progress section
+        ctk.CTkLabel(self.settings_frame, text="Download Progress").pack(anchor="w", padx=20, pady=(10, 0))
+        self.progress_bar = ctk.CTkProgressBar(self.settings_frame)
+        self.progress_bar.pack(fill="x", padx=20, pady=(5, 10))
+        self.progress_bar.set(0)
+
+        # Folder buttons
+        self.folder_btn = ctk.CTkButton(self.settings_frame, text="📂 Open Versions Folder", command=self.open_versions_folder, fg_color="gray30")
+        self.folder_btn.pack(fill="x", padx=20, pady=(10, 5))
+
+        # Status and dynamic launch/download button
+        self.status_label = ctk.CTkLabel(self.main_frame, textvariable=self.status_text, text_color="gray")
+        self.status_label.pack(side="bottom", pady=5)
+        
+        self.launch_btn = ctk.CTkButton(self.main_frame, text="🎮 LAUNCH GAME", height=55, font=ctk.CTkFont(size=20, weight="bold"), command=self.handle_main_action)
+        self.launch_btn.pack(side="bottom", fill="x", padx=20, pady=10)
+
+    def load_versions(self):
+        """Load available Titanic versions from the website"""
+        self.status_text.set("Fetching versions from Titanic website...")
+        self.update()
+        
+        # Start fetching in separate thread to avoid blocking UI
+        thread = threading.Thread(target=self._fetch_versions_thread)
+        thread.daemon = True
+        thread.start()
+
+    def _fetch_versions_thread(self):
+        """Fetch versions from Titanic website in background thread"""
+        try:
+            # Fetch the download page
+            response = requests.get("https://osu.titanic.sh/download/", timeout=10)
+            response.raise_for_status()
+            
+            soup = BeautifulSoup(response.text, 'html.parser')
+            
+            versions = []
+            download_links = {}
+            version_descriptions = {}
+            version_images = {}
+            
+            # Find all client divs that contain version information
+            client_divs = soup.find_all('div', class_='client')
+            
+            for client_div in client_divs:
+                # Get version
+                version_elem = client_div.find('p', class_='version')
+                if not version_elem:
+                    continue
+                version = version_elem.get_text(strip=True)
+                
+                # Get description
+                desc_elem = client_div.find('p', class_='description')
+                description = desc_elem.get_text(strip=True) if desc_elem else "No description available"
+                
+                # Get image - prefer /images/clients/ over /ss/ URLs
+                img_elem = client_div.find('img')
+                image_url = None
+                if img_elem and img_elem.get('src'):
+                    img_src = img_elem.get('src')
+                    if img_src.startswith('/images/clients/'):
+                        image_url = f"https://osu.titanic.sh{img_src}"
+                    elif img_src.startswith('/ss/'):
+                        # Try /ss/ URLs but they might be blocked
+                        image_url = f"https://osu.titanic.sh{img_src}"
+                
+                # Get download link
+                download_link = client_div.find('a', class_='download-link')
+                if download_link and download_link.get('href'):
+                    download_url = download_link.get('href')
+                    
+                    versions.append(version)
+                    download_links[version] = download_url
+                    version_descriptions[version] = description
+                    version_images[version] = image_url
+            
+            versions.sort(key=TitanicLauncher.version_key, reverse=True)
+            
+            if not versions:
+                # Fallback to some known versions if scraping fails
+                versions = ["b20151228.3", "b20150826.3", "b20150331.2", "b20141216.1", "b20131216.1"]
+                for version in versions:
+                    version_descriptions[version] = "Fallback version - no description available"
+            
+            # Store data for later use
+            self.download_links = download_links
+            self.version_descriptions = version_descriptions
+            self.version_images = version_images
+            
+            # Update UI in main thread
+            self.after(0, self._update_versions_ui, versions)
+            
+        except Exception as e:
+            # Fallback to known versions on error
+            fallback_versions = ["b20151228.3", "b20150826.3", "b20150331.2", "b20141216.1", "b20131216.1"]
+            self.download_links = {}
+            self.version_descriptions = {v: "Fallback version - no description available" for v in fallback_versions}
+            self.version_images = {}
+            self.after(0, self._update_versions_ui, fallback_versions)
+            self.after(0, lambda: self.status_text.set(f"Using fallback versions (scraping failed: {str(e)})"))
+
+    def _update_versions_ui(self, versions):
+        """Update UI with fetched versions"""
+        self.versions = versions
+        if versions:
+            self.selected_version.set(versions[0])
+        
+        self.status_text.set(f"Found {len(versions)} versions")
+        self.refresh_version_buttons()
+        
+        # Start logo download in background
+        threading.Thread(target=self.download_logo, daemon=True).start()
+    
+    @staticmethod
+    def version_key(v):
+        """Helper method to sort versions by date"""
+        # Remove 'b' prefix if present
+        clean_v = v.lstrip('b')
+        # Try to extract date parts
+        import re
+        match = re.match(r'(\d{4})(\d{2})(\d{2})(?:\.(\d+))?', clean_v)
+        if match:
+            year, month, day, build = match.groups()
+            build_num = int(build) if build else 0
+            return (int(year), int(month), int(day), build_num)
+        return (0, 0, 0, 0)
+
+    def refresh_version_buttons(self):
+        """Refresh the version buttons in the sidebar - show only installed versions"""
+        # Clear existing buttons
+        for widget in self.scrollable_list.winfo_children():
+            widget.destroy()
+        
+        self.scrollable_list.grid_columnconfigure(0, weight=1)
+        
+        # Only show installed versions in sidebar
+        installed_versions = []
+        for version in self.versions:
+            version_path = os.path.join(self.versions_dir, version)
+            if os.path.exists(version_path) and os.path.exists(os.path.join(version_path, "osu!.exe")):
+                installed_versions.append(version)
+        
+        # Add buttons for installed versions only
+        for i, version in enumerate(installed_versions):
+            # Get custom name
+            config = self.get_version_config(version)
+            display_name = config['custom_name']
+            
+            # Create button for installed version - normal styling
+            btn = ctk.CTkButton(
+                self.scrollable_list,
+                text=display_name,
+                fg_color="transparent",
+                border_width=1,
+                anchor="w",
+                height=40,
+                command=lambda v=version: self.select_version(v)
+            )
+            btn.grid(row=i, column=0, sticky="ew", pady=2)
+            btn.configure(text_color=("gray10", "gray90"))
+        
+        # If no versions installed, show message
+        if not installed_versions:
+            no_versions_label = ctk.CTkLabel(
+                self.scrollable_list,
+                text="No versions installed\nClick 'Download Clients' to get started",
+                font=ctk.CTkFont(size=12),
+                text_color="gray"
+            )
+            no_versions_label.grid(row=0, column=0, pady=20)
+
+    def select_version(self, version):
+        """Select a version and display its details"""
+        self.current_version_name = version
+        self.selected_version.set(version)
+        
+        # Get custom name for display
+        config = self.get_version_config(version)
+        display_name = config['custom_name']
+        self.header_label.configure(text=display_name)
+        
+        # Update version info
+        version_path = os.path.join(self.versions_dir, version)
+        
+        # Update description - simplified for installed versions
+        self.description_text.configure(state="normal")
+        self.description_text.delete("0.0", "end")
+        
+        # Add installation status and config info
+        if os.path.exists(version_path):
+            size = self.get_directory_size(version_path)
+            size_str = self.format_size(size)
+            config_info = []
+            if config['launch_args']:
+                config_info.append(f"Launch Args: {config['launch_args']}")
+            
+            config_text = "\n".join(config_info) if config_info else "No custom arguments set"
+            
+            self.description_text.insert("end", f"Status: Installed ✓\nSize: {size_str}\nPath: {version_path}\n\n{config_text}")
+            # Update button to launch
+            self.launch_btn.configure(text="🎮 LAUNCH GAME", fg_color=("#3B8ED0", "#1F6AA5"))
+        else:
+            # This shouldn't happen with the new UI, but handle it gracefully
+            self.description_text.insert("end", f"Status: Not installed\nUse 'Download Clients' to install this version.")
+            self.launch_btn.configure(text="🎮 LAUNCH GAME", fg_color=("#3B8ED0", "#1F6AA5"), state="disabled")
+        
+        self.description_text.configure(state="disabled")
+        
+        # Update settings fields
+        self.name_entry.delete(0, 'end')
+        self.name_entry.insert(0, config['custom_name'])
+        self.launch_args_entry.delete(0, 'end')
+        self.launch_args_entry.insert(0, config['launch_args'])
+        
+        self.status_text.set(f"Selected {display_name}")
+
+    def load_preview_image(self, image_url):
+        """Load and display preview image for a version"""
+        try:
+            # Add proper headers to mimic browser request
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'Referer': 'https://osu.titanic.sh/download/',
+                'Accept': 'image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1'
+            }
+            
+            response = requests.get(image_url, headers=headers, timeout=10)
+            if response.status_code == 200:
+                # Load image from response
+                image_data = io.BytesIO(response.content)
+                pil_image = Image.open(image_data)
+                
+                # Get original dimensions
+                original_width, original_height = pil_image.size
+                
+                # Calculate display size - match description box width but account for padding
+                # Description box has padx=20, image frame has padx=20+10=30, so available width is frame width - 60
+                # We'll use a fixed width that works well with the layout and padding
+                target_width = 340  # Reduced from 380 to account for 20px padding on each side
+                
+                # Calculate height to maintain aspect ratio
+                aspect_ratio = original_height / original_width
+                target_height = int(target_width * aspect_ratio)
+                
+                # Limit maximum height to prevent overly tall images
+                max_height = 250
+                if target_height > max_height:
+                    target_height = max_height
+                    # Recalculate width to maintain aspect ratio
+                    target_width = int(max_height / aspect_ratio)
+                
+                # Resize image with proper dimensions
+                pil_image = pil_image.resize((target_width, target_height), Image.Resampling.LANCZOS)
+                
+                # Create CTkImage with proper size
+                ctk_image = ctk.CTkImage(light_image=pil_image, dark_image=pil_image, size=(target_width, target_height))
+                
+                # Update UI in main thread
+                self.after(0, lambda: self.update_preview_image(ctk_image))
+            else:
+                print(f"Image request failed with status {response.status_code} for URL: {image_url}")
+                # If it's an /ss/ URL that failed, try to find an alternative
+                if '/ss/' in image_url:
+                    self.after(0, lambda: self.clear_preview_image("Preview image unavailable (protected)"))
+                else:
+                    self.after(0, lambda: self.clear_preview_image("Preview image unavailable"))
+        except Exception as e:
+            print(f"Failed to load preview image: {e}")
+            self.after(0, lambda: self.clear_preview_image("Failed to load preview image"))
+
+    def clear_preview_image(self, text="No preview image available"):
+        """Clear the preview image and show placeholder text"""
+        try:
+            if hasattr(self, 'preview_image_label') and self.preview_image_label.winfo_exists():
+                # Create a new label without image reference
+                self.preview_image_label.configure(image="", text=text)
+        except Exception as e:
+            print(f"Error clearing preview image: {e}")
+            # Fallback: just set text
+            try:
+                self.preview_image_label.configure(text=text)
+            except:
+                pass
+
+    def update_preview_image(self, ctk_image):
+        """Update the preview image display"""
+        try:
+            if hasattr(self, 'preview_image_label') and self.preview_image_label.winfo_exists():
+                self.preview_image_label.configure(image=ctk_image, text="")
+        except Exception as e:
+            print(f"Error updating preview image: {e}")
+            # Fallback to clear image
+            self.clear_preview_image("Preview image unavailable")
+
+    def _on_mousewheel(self, event):
+        """Handle mouse wheel scrolling for the sidebar"""
+        if sys.platform == "win32" or sys.platform == "darwin":
+            delta = -1 * (event.delta / 120)
+        else:  # Linux
+            delta = -1 if event.num == 4 else 1
+        
+        # Get the scrollable canvas and scroll
+        canvas = self.scrollable_list._canvas
+        scroll_y = canvas.yview()
+        if scroll_y[0] > 0 or scroll_y[1] < 1:
+            canvas.yview_scroll(int(delta), "units")
+
+    def download_logo(self):
+        """Download and set the logo"""
+        try:
+            if not os.path.exists(self.logo_path):
+                response = requests.get(self.logo_url, timeout=10)
+                if response.status_code == 200:
+                    # Convert SVG to PNG using PIL (fallback to simple text if SVG conversion fails)
+                    try:
+                        # For SVG, we'll create a simple text-based logo as fallback
+                        # In a real implementation, you might want to use a proper SVG converter
+                        img = Image.new('RGBA', (60, 60), (0, 0, 0, 0))
+                        self.logo_image = ctk.CTkImage(light_image=img, dark_image=img, size=(60, 60))
+                        self.after(0, self.update_logo)
+                    except:
+                        pass
+        except Exception as e:
+            print(f"Failed to download logo: {e}")
+
+    def update_logo(self):
+        """Update the logo display"""
+        if self.logo_image:
+            self.logo_label.configure(image=self.logo_image, text="")
+
+    def handle_main_action(self):
+        """Handle the main action button - always launch for installed versions"""
+        version = self.selected_version.get()
+        if not version:
+            messagebox.showerror("Error", "Please select a version first")
+            return
+        
+        # Always launch since we only show installed versions in sidebar
+        self.launch_game()
+
+    def download_version(self):
+        """Download selected Titanic version"""
+        version = self.selected_version.get()
+        if not version:
+            messagebox.showerror("Error", "Please select a version to download")
+            return
+        
+        # Start download in separate thread
+        thread = threading.Thread(target=self._download_version_thread, args=(version,))
+        thread.daemon = True
+        thread.start()
+
+    def _download_version_thread(self, version):
+        """Download version in background thread"""
+        try:
+            self.status_text.set(f"Downloading {version}...")
+            self.download_progress.set(0)
+            self.update()
+            
+            # Try scraped download URL first, then fallback patterns
+            download_url = None
+            response = None
+            
+            # Use scraped URL if available
+            if version in self.download_links:
+                download_url = self.download_links[version]
+                try:
+                    response = requests.get(download_url, stream=True, timeout=10)
+                    if response.status_code == 200:
+                        self.after(0, lambda: self.status_text.set(f"Using scraped URL for {version}"))
+                except:
+                    download_url = None
+            
+            # If scraped URL failed, try fallback patterns
+            if not download_url or not response or response.status_code != 200:
+                possible_urls = [
+                    f"https://cdn.titanic.sh/clients/{version}.zip",
+                    f"https://osu.titanic.sh/releases/{version}.zip",
+                    f"https://osu.titanic.sh/download/{version}",
+                    f"https://osu.titanic.sh/files/{version}.zip",
+                    f"https://osu.titanic.sh/get/{version}.zip"
+                ]
+                
+                for url in possible_urls:
+                    try:
+                        response = requests.get(url, stream=True, timeout=10)
+                        if response.status_code == 200:
+                            download_url = url
+                            self.after(0, lambda: self.status_text.set(f"Using fallback URL for {version}"))
+                            break
+                    except:
+                        continue
+            
+            if not download_url or not response or response.status_code != 200:
+                raise Exception("Could not find valid download URL")
+            
+            # Download path
+            download_path = os.path.join(self.versions_dir, f"{version}.zip")
+            extract_path = os.path.join(self.versions_dir, version)
+            
+            # Remove existing extraction directory if it exists
+            if os.path.exists(extract_path):
+                shutil.rmtree(extract_path)
+            
+            # Download file
+            total_size = int(response.headers.get('content-length', 0))
+            downloaded = 0
+            
+            with open(download_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        if total_size > 0:
+                            progress = (downloaded / total_size) * 100
+                            self.download_progress.set(progress)
+                            self.update()
+            
+            self.status_text.set(f"Extracting {version}...")
+            self.update()
+            
+            # Extract archive
+            with zipfile.ZipFile(download_path, 'r') as zip_ref:
+                zip_ref.extractall(extract_path)
+            
+            # Clean up zip file
+            os.remove(download_path)
+            
+            self.status_text.set(f"Successfully installed {version}")
+            self.download_progress.set(100)
+            self.refresh_version_buttons()
+            self.select_version(version)  # Update the display and button
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to download {version}: {str(e)}")
+            self.status_text.set(f"Failed to download {version}")
+            self.download_progress.set(0)
+
+    def launch_game(self):
+        """Launch selected Titanic version using osu-wine with custom arguments"""
+        version = self.selected_version.get()
+        if not version:
+            messagebox.showerror("Error", "Please select a version to launch")
+            return
+        
+        version_path = os.path.join(self.versions_dir, version)
+        osu_exe = os.path.join(version_path, "osu!.exe")
+        
+        if not os.path.exists(version_path):
+            messagebox.showerror("Error", f"Version {version} is not installed")
+            return
+        
+        if not os.path.exists(osu_exe):
+            messagebox.showerror("Error", f"osu!.exe not found in {version_path}")
+            return
+        
+        try:
+            # Get version configuration
+            config = self.get_version_config(version)
+            display_name = config['custom_name']
+            
+            self.status_text.set(f"Launching {display_name}...")
+            self.launch_btn.configure(state="disabled", text="Launching...")
+            self.update()
+            
+            # Build command with custom arguments
+            cmd = ["osu-wine", "--wine", osu_exe]
+            
+            # Add launch arguments if specified
+            if config['launch_args']:
+                launch_args = config['launch_args'].split()
+                cmd.extend(launch_args)
+            
+            print(f"Launching with command: {' '.join(cmd)}")
+            subprocess.Popen(cmd, cwd=version_path)
+            
+            self.status_text.set(f"Launched {display_name}")
+            
+            # Re-enable button after a delay
+            self.after(2000, lambda: self.launch_btn.configure(state="normal", text="🎮 LAUNCH GAME"))
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to launch {version}: {str(e)}")
+            self.status_text.set(f"Failed to launch {version}")
+            self.launch_btn.configure(state="normal", text="🎮 LAUNCH GAME")
+
+    def delete_version(self):
+        """Delete selected installed version"""
+        version = self.selected_version.get()
+        if not version:
+            messagebox.showerror("Error", "Please select a version to delete")
+            return
+        
+        version_path = os.path.join(self.versions_dir, version)
+        
+        if not os.path.exists(version_path):
+            messagebox.showerror("Error", f"Version {version} is not installed")
+            return
+        
+        if messagebox.askyesno("Confirm Delete", f"Are you sure you want to delete {version}?"):
+            try:
+                shutil.rmtree(version_path)
+                self.status_text.set(f"Deleted {version}")
+                self.refresh_version_buttons()
+                
+                # Clear selection if deleted version was selected
+                if self.selected_version.get() == version:
+                    self.selected_version.set("")
+                    self.current_version_name = None
+                    self.header_label.configure(text="Select a Version")
+                    
+                    # Reset description and image
+                    self.description_text.configure(state="normal")
+                    self.description_text.delete("0.0", "end")
+                    self.description_text.insert("0.0", "Select a version to see details...")
+                    self.description_text.configure(state="disabled")
+                    self.clear_preview_image("No version selected")
+                    
+                    # Reset settings fields
+                    self.name_entry.delete(0, 'end')
+                    self.launch_args_entry.delete(0, 'end')
+                    
+                    # Reset button to default state
+                    self.launch_btn.configure(text="🎮 LAUNCH GAME", fg_color=("#3B8ED0", "#1F6AA5"))
+                
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to delete {version}: {str(e)}")
+                self.status_text.set(f"Failed to delete {version}")
+
+    def open_versions_folder(self):
+        """Open the versions folder in the file manager"""
+        try:
+            if sys.platform == "win32":
+                os.startfile(self.versions_dir)
+            else:
+                subprocess.Popen(["xdg-open", self.versions_dir])
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to open folder: {str(e)}")
+
+    def save_current_version_settings(self):
+        """Save settings for the currently selected version"""
+        version = self.selected_version.get()
+        if not version:
+            messagebox.showerror("Error", "Please select a version first")
+            return
+        
+        try:
+            new_config = {
+                'custom_name': self.name_entry.get().strip() or version,
+                'launch_args': self.launch_args_entry.get().strip()
+            }
+            
+            self.update_version_config(version, new_config)
+            self.refresh_version_buttons()  # Update display
+            
+            # Update header with new custom name
+            self.header_label.configure(text=new_config['custom_name'])
+            
+            messagebox.showinfo("Success", "Settings saved successfully!")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to save settings: {str(e)}")
+
+    def open_download_dialog(self):
+        """Open download dialog showing available clients to download"""
+        # Create download window
+        download_window = ctk.CTkToplevel(self)
+        download_window.title("Download Clients")
+        download_window.geometry("800x600")
+        download_window.transient(self)
+        
+        # Main frame
+        main_frame = ctk.CTkFrame(download_window)
+        main_frame.pack(fill="both", expand=True, padx=20, pady=20)
+        
+        # Title
+        ctk.CTkLabel(main_frame, text="Available Clients", font=ctk.CTkFont(size=24, weight="bold")).pack(pady=(10, 20))
+        
+        # Scrollable frame for client list
+        scrollable_frame = ctk.CTkScrollableFrame(main_frame, height=400)
+        scrollable_frame.pack(fill="both", expand=True, pady=(0, 20))
+        scrollable_frame.grid_columnconfigure(0, weight=1)
+        scrollable_frame.grid_columnconfigure(1, weight=1)
+        scrollable_frame.grid_columnconfigure(2, weight=1)
+        
+        # Add available clients (not installed)
+        row = 0
+        for version in self.versions:
+            version_path = os.path.join(self.versions_dir, version)
+            if not (os.path.exists(version_path) and os.path.exists(os.path.join(version_path, "osu!.exe"))):
+                # Get version info
+                config = self.get_version_config(version)
+                display_name = config['custom_name']
+                description = self.version_descriptions.get(version, "No description available")
+                image_url = self.version_images.get(version)
+                
+                # Create client card
+                client_frame = ctk.CTkFrame(scrollable_frame)
+                client_frame.grid(row=row, column=0, columnspan=3, sticky="ew", pady=5, padx=5)
+                client_frame.grid_columnconfigure(1, weight=1)
+                
+                # Version name - make it clickable
+                name_label = ctk.CTkLabel(
+                    client_frame, 
+                    text=display_name, 
+                    font=ctk.CTkFont(size=16, weight="bold"),
+                    text_color=("#1B5E20", "#4CAF50"),
+                    cursor="hand2"
+                )
+                name_label.grid(row=0, column=0, sticky="w", padx=10, pady=(10, 5))
+                name_label.bind("<Button-1>", lambda e, v=version: self.show_client_preview(v))
+                
+                # Download button
+                download_btn = ctk.CTkButton(
+                    client_frame,
+                    text="📥 Download",
+                    fg_color="#1bd964",
+                    hover_color="#15a34a",
+                    text_color="black",
+                    width=100,
+                    command=lambda v=version, w=download_window: self.download_from_dialog(v, w)
+                )
+                download_btn.grid(row=0, column=2, sticky="e", padx=10, pady=(10, 5))
+                
+                # Description
+                desc_label = ctk.CTkLabel(client_frame, text=description, font=ctk.CTkFont(size=12), text_color="gray")
+                desc_label.grid(row=1, column=0, columnspan=3, sticky="w", padx=10, pady=(0, 10))
+                
+                row += 1
+        
+        # Close button
+        close_btn = ctk.CTkButton(main_frame, text="Close", command=download_window.destroy, fg_color="#6c757d")
+        close_btn.pack(pady=(10, 0))
+        
+        # Set grab after window is fully configured
+        download_window.after(100, download_window.grab_set)
+
+    def download_from_dialog(self, version, window):
+        """Download a version from the download dialog"""
+        # Close the dialog first
+        window.destroy()
+        
+        # Start download
+        self.selected_version.set(version)
+        self.download_version()
+
+    def show_client_preview(self, version):
+        """Show preview window for a client with description and image"""
+        # Get version info
+        config = self.get_version_config(version)
+        display_name = config['custom_name']
+        description = self.version_descriptions.get(version, "No description available")
+        image_url = self.version_images.get(version)
+        
+        # Create preview window
+        preview_window = ctk.CTkToplevel(self)
+        preview_window.title(f"Preview - {display_name}")
+        preview_window.geometry("600x500")
+        preview_window.transient(self)
+        
+        # Main frame
+        main_frame = ctk.CTkFrame(preview_window)
+        main_frame.pack(fill="both", expand=True, padx=20, pady=20)
+        
+        # Title
+        title_label = ctk.CTkLabel(main_frame, text=display_name, font=ctk.CTkFont(size=24, weight="bold"))
+        title_label.pack(pady=(10, 20))
+        
+        # Preview image frame
+        image_frame = ctk.CTkFrame(main_frame, corner_radius=10)
+        image_frame.pack(pady=10, padx=20, fill="x")
+        
+        image_label = ctk.CTkLabel(image_frame, text="Loading preview...", font=ctk.CTkFont(size=14), corner_radius=8)
+        image_label.pack(pady=10, padx=10)
+        
+        # Description
+        desc_frame = ctk.CTkFrame(main_frame)
+        desc_frame.pack(fill="both", expand=True, pady=(10, 20), padx=20)
+        
+        desc_label = ctk.CTkLabel(desc_frame, text="Description", font=ctk.CTkFont(size=16, weight="bold"))
+        desc_label.pack(anchor="w", padx=10, pady=(10, 5))
+        
+        desc_text = ctk.CTkTextbox(desc_frame, height=150, font=ctk.CTkFont(size=12))
+        desc_text.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+        desc_text.insert("0.0", description)
+        desc_text.configure(state="disabled")
+        
+        # Action buttons
+        button_frame = ctk.CTkFrame(main_frame)
+        button_frame.pack(pady=(0, 10))
+        
+        download_btn = ctk.CTkButton(
+            button_frame,
+            text="📥 Download",
+            fg_color="#1bd964",
+            hover_color="#15a34a",
+            text_color="black",
+            width=120,
+            command=lambda: self.download_from_preview(version, preview_window)
+        )
+        download_btn.pack(side="left", padx=5)
+        
+        close_btn = ctk.CTkButton(
+            button_frame,
+            text="Close",
+            fg_color="#6c757d",
+            width=120,
+            command=preview_window.destroy
+        )
+        close_btn.pack(side="left", padx=5)
+        
+        # Load preview image if available
+        if image_url:
+            threading.Thread(target=self.load_preview_image_for_window, args=(image_url, image_label), daemon=True).start()
+        else:
+            image_label.configure(text="No preview image available")
+        
+        # Set grab after window is fully configured
+        preview_window.after(100, preview_window.grab_set)
+
+    def load_preview_image_for_window(self, image_url, image_label):
+        """Load preview image for preview window"""
+        try:
+            # Add proper headers to mimic browser request
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'Referer': 'https://osu.titanic.sh/download/',
+                'Accept': 'image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1'
+            }
+            
+            response = requests.get(image_url, headers=headers, timeout=10)
+            if response.status_code == 200:
+                # Load image from response
+                image_data = io.BytesIO(response.content)
+                pil_image = Image.open(image_data)
+                
+                # Get original dimensions
+                original_width, original_height = pil_image.size
+                
+                # Calculate display size - smaller for preview window
+                target_width = 300
+                
+                # Calculate height to maintain aspect ratio
+                aspect_ratio = original_height / original_width
+                target_height = int(target_width * aspect_ratio)
+                
+                # Limit maximum height to prevent overly tall images
+                max_height = 200
+                if target_height > max_height:
+                    target_height = max_height
+                    # Recalculate width to maintain aspect ratio
+                    target_width = int(max_height / aspect_ratio)
+                
+                # Resize image with proper dimensions
+                pil_image = pil_image.resize((target_width, target_height), Image.Resampling.LANCZOS)
+                
+                # Create CTkImage with proper size
+                ctk_image = ctk.CTkImage(light_image=pil_image, dark_image=pil_image, size=(target_width, target_height))
+                
+                # Update UI in main thread
+                self.after(0, lambda: image_label.configure(image=ctk_image, text=""))
+            else:
+                self.after(0, lambda: image_label.configure(text="Preview image unavailable", image=""))
+        except Exception as e:
+            print(f"Failed to load preview image: {e}")
+            self.after(0, lambda: image_label.configure(text="Failed to load preview image", image=""))
+
+    def download_from_preview(self, version, window):
+        """Download a version from the preview window"""
+        # Close the preview window first
+        window.destroy()
+        
+        # Start download
+        self.selected_version.set(version)
+        self.download_version()
+
+    def open_options_dialog(self):
+        """Open options dialog for appearance and settings"""
+        # Create options window
+        options_window = ctk.CTkToplevel(self)
+        options_window.title("Options")
+        options_window.geometry("500x400")
+        options_window.transient(self)
+        
+        # Main frame
+        main_frame = ctk.CTkFrame(options_window)
+        main_frame.pack(fill="both", expand=True, padx=20, pady=20)
+        
+        # Title
+        ctk.CTkLabel(main_frame, text="Options", font=ctk.CTkFont(size=24, weight="bold")).pack(pady=(10, 20))
+        
+        # Appearance section
+        appearance_frame = ctk.CTkFrame(main_frame)
+        appearance_frame.pack(fill="x", pady=(0, 20))
+        
+        ctk.CTkLabel(appearance_frame, text="Appearance", font=ctk.CTkFont(size=18, weight="bold")).pack(anchor="w", padx=10, pady=(10, 5))
+        
+        # Dark/Light mode toggle
+        mode_frame = ctk.CTkFrame(appearance_frame)
+        mode_frame.pack(fill="x", padx=10, pady=5)
+        
+        ctk.CTkLabel(mode_frame, text="Theme:", font=ctk.CTkFont(weight="bold")).pack(side="left", padx=10)
+        
+        mode_switch = ctk.CTkSwitch(
+            mode_frame,
+            text="Dark Mode",
+            variable=self.appearance_mode,
+            onvalue="dark",
+            offvalue="light",
+            command=lambda: self.update_appearance_mode()
+        )
+        mode_switch.pack(side="left", padx=10)
+        
+        # Set initial state
+        mode_switch.select() if self.appearance_mode.get() == "dark" else mode_switch.deselect()
+        
+        # Accent color selection
+        color_frame = ctk.CTkFrame(appearance_frame)
+        color_frame.pack(fill="x", padx=10, pady=5)
+        
+        ctk.CTkLabel(color_frame, text="Accent Color:", font=ctk.CTkFont(weight="bold")).pack(side="left", padx=10)
+        
+        color_options = ["blue", "green", "dark-blue", "red"]
+        color_menu = ctk.CTkOptionMenu(
+            color_frame,
+            variable=self.accent_color,
+            values=color_options,
+            command=lambda choice: self.update_accent_color(choice)
+        )
+        color_menu.pack(side="left", padx=10)
+        
+        # Tools section
+        tools_frame = ctk.CTkFrame(main_frame)
+        tools_frame.pack(fill="x", pady=(0, 20))
+        
+        ctk.CTkLabel(tools_frame, text="Tools", font=ctk.CTkFont(size=18, weight="bold")).pack(anchor="w", padx=10, pady=(10, 5))
+        
+        # osu-wine download button (placeholder for now)
+        osuwine_btn = ctk.CTkButton(
+            tools_frame,
+            text="📥 Download osu-wine",
+            fg_color="#ff6b35",
+            hover_color="#e55a2b",
+            command=self.download_osuwine_placeholder
+        )
+        osuwine_btn.pack(fill="x", padx=10, pady=5)
+        
+        # Help text
+        help_text = ctk.CTkTextbox(main_frame, height=80, font=ctk.CTkFont(size=10))
+        help_text.pack(fill="x", pady=(0, 20))
+        help_text.insert("0.0", 
+            "Theme: Switch between dark and light modes\n"
+            "Accent Color: Change the primary color theme\n"
+            "osu-wine: Download the osu-wine launcher (coming soon)"
+        )
+        help_text.configure(state="disabled")
+        
+        # Close button
+        close_btn = ctk.CTkButton(main_frame, text="Close", command=options_window.destroy, fg_color="#6c757d")
+        close_btn.pack(pady=(10, 0))
+        
+        # Set grab after window is fully configured
+        options_window.after(100, options_window.grab_set)
+
+    def update_appearance_mode(self):
+        """Update the appearance mode"""
+        mode = self.appearance_mode.get()
+        ctk.set_appearance_mode(mode)
+        # Save to config
+        self.save_options_config()
+
+    def update_accent_color(self, color):
+        """Update the accent color"""
+        ctk.set_default_color_theme(color)
+        self.accent_color.set(color)
+        # Save to config
+        self.save_options_config()
+        # Note: Color theme change requires restart to take full effect
+        messagebox.showinfo("Color Changed", f"Accent color changed to {color}.\nRestart the launcher for full effect.")
+
+    def download_osuwine_placeholder(self):
+        """Placeholder for osu-wine download functionality"""
+        messagebox.showinfo("Coming Soon", "osu-wine download functionality will be available in the next update!")
+
+    def save_options_config(self):
+        """Save options configuration"""
+        try:
+            # Load existing config
+            config = {}
+            if os.path.exists(self.config_file):
+                with open(self.config_file, 'r') as f:
+                    config = json.load(f)
+            
+            # Add options
+            config['options'] = {
+                'appearance_mode': self.appearance_mode.get(),
+                'accent_color': self.accent_color.get()
+            }
+            
+            # Save config
+            with open(self.config_file, 'w') as f:
+                json.dump(config, f, indent=2)
+        except Exception as e:
+            print(f"Failed to save options config: {e}")
+
+    def load_options_config(self):
+        """Load options configuration"""
+        try:
+            if os.path.exists(self.config_file):
+                with open(self.config_file, 'r') as f:
+                    config = json.load(f)
+                    
+                options = config.get('options', {})
+                self.appearance_mode.set(options.get('appearance_mode', 'dark'))
+                self.accent_color.set(options.get('accent_color', 'blue'))
+                
+                # Apply settings
+                ctk.set_appearance_mode(self.appearance_mode.get())
+                ctk.set_default_color_theme(self.accent_color.get())
+        except Exception as e:
+            print(f"Failed to load options config: {e}")
+
+    def get_directory_size(self, path):
+        """Calculate total size of a directory"""
+        total_size = 0
+        try:
+            for dirpath, dirnames, filenames in os.walk(path):
+                for filename in filenames:
+                    filepath = os.path.join(dirpath, filename)
+                    if os.path.exists(filepath):
+                        total_size += os.path.getsize(filepath)
+        except Exception:
+            pass
+        return total_size
+
+    def format_size(self, size_bytes):
+        """Format size in human readable format"""
+        if size_bytes < 1024:
+            return f"{size_bytes} B"
+        elif size_bytes < 1024 * 1024:
+            return f"{size_bytes / 1024:.1f} KB"
+        elif size_bytes < 1024 * 1024 * 1024:
+            return f"{size_bytes / (1024 * 1024):.1f} MB"
+        else:
+            return f"{size_bytes / (1024 * 1024 * 1024):.1f} GB"
+
+    def load_config(self):
+        """Load version configurations from file"""
+        try:
+            if os.path.exists(self.config_file):
+                with open(self.config_file, 'r') as f:
+                    self.version_configs = json.load(f)
+        except Exception as e:
+            print(f"Failed to load config: {e}")
+            self.version_configs = {}
+
+    def save_config(self):
+        """Save version configurations to file"""
+        try:
+            with open(self.config_file, 'w') as f:
+                json.dump(self.version_configs, f, indent=2)
+        except Exception as e:
+            print(f"Failed to save config: {e}")
+
+    def get_version_config(self, version):
+        """Get configuration for a specific version"""
+        return self.version_configs.get(version, {
+            'custom_name': version,
+            'launch_args': ''
+        })
+
+    def update_version_config(self, version, config):
+        """Update configuration for a specific version"""
+        self.version_configs[version] = config
+        self.save_config()
+
+def main():
+    app = TitanicLauncher()
+    app.mainloop()
+
+if __name__ == "__main__":
+    main()
