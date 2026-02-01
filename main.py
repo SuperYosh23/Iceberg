@@ -10,7 +10,6 @@ import json
 import re
 from urllib.parse import urljoin
 import shutil
-from bs4 import BeautifulSoup
 import sys
 from PIL import Image, ImageTk
 import io
@@ -228,8 +227,8 @@ class TitanicLauncher(ctk.CTk):
         self.launch_btn.pack(side="bottom", fill="x", padx=20, pady=10)
 
     def load_versions(self):
-        """Load available Titanic versions from the website"""
-        self.status_text.set("Fetching versions from Titanic website...")
+        """Load available Titanic versions from the API"""
+        self.status_text.set("Fetching versions from Titanic API...")
         self.update()
         
         # Start fetching in separate thread to avoid blocking UI
@@ -238,61 +237,61 @@ class TitanicLauncher(ctk.CTk):
         thread.start()
 
     def _fetch_versions_thread(self):
-        """Fetch versions from Titanic website in background thread"""
+        """Fetch versions from Titanic API in background thread"""
         try:
-            # Fetch the download page
-            response = requests.get("https://osu.titanic.sh/download/", timeout=10)
+            # Fetch versions from the official Titanic API
+            response = requests.get("https://api.titanic.sh/releases", timeout=10)
             response.raise_for_status()
             
-            soup = BeautifulSoup(response.text, 'html.parser')
+            # Parse JSON response
+            api_data = response.json()
             
             versions = []
             download_links = {}
             version_descriptions = {}
             version_images = {}
             
-            # Find all client divs that contain version information
-            client_divs = soup.find_all('div', class_='client')
-            
-            for client_div in client_divs:
-                # Get version
-                version_elem = client_div.find('p', class_='version')
-                if not version_elem:
-                    continue
-                version = version_elem.get_text(strip=True)
+            # Process each version from the API
+            for version_data in api_data:
+                version = version_data['name']
+                description = version_data.get('description', 'No description available.')
                 
-                # Get description
-                desc_elem = client_div.find('p', class_='description')
-                description = desc_elem.get_text(strip=True) if desc_elem else "No description available"
+                # Get download URL (API provides a list, take the first one)
+                downloads = version_data.get('downloads', [])
+                download_url = downloads[0] if downloads else None
                 
-                # Get image - prefer /images/clients/ over /ss/ URLs
-                img_elem = client_div.find('img')
+                # Get screenshot URLs (API provides a list, prefer the first one)
+                screenshots = version_data.get('screenshots', [])
                 image_url = None
-                if img_elem and img_elem.get('src'):
-                    img_src = img_elem.get('src')
-                    if img_src.startswith('/images/clients/'):
-                        image_url = f"https://osu.titanic.sh{img_src}"
-                    elif img_src.startswith('/ss/'):
-                        # Try /ss/ URLs but they might be blocked
-                        image_url = f"https://osu.titanic.sh{img_src}"
                 
-                # Get download link
-                download_link = client_div.find('a', class_='download-link')
-                if download_link and download_link.get('href'):
-                    download_url = download_link.get('href')
-                    
-                    versions.append(version)
+                if screenshots:
+                    screenshot = screenshots[0]
+                    # Convert relative URLs to absolute
+                    if screenshot.startswith('/images/clients/'):
+                        image_url = self.titanic_base_url + screenshot.lstrip('/')
+                    elif screenshot.startswith('/ss/'):
+                        image_url = self.titanic_base_url + screenshot.lstrip('/')
+                    elif screenshot.startswith('http'):
+                        image_url = screenshot
+                
+                versions.append(version)
+                if download_url:
                     download_links[version] = download_url
-                    version_descriptions[version] = description
-                    version_images[version] = image_url
+                version_descriptions[version] = description
+                version_images[version] = image_url
             
+            # Sort versions from newest to oldest using the existing version_key method
             versions.sort(key=TitanicLauncher.version_key, reverse=True)
             
             if not versions:
-                # Fallback to some known versions if scraping fails
-                versions = ["b20151228.3", "b20150826.3", "b20150331.2", "b20141216.1", "b20131216.1"]
-                for version in versions:
-                    version_descriptions[version] = "Fallback version - no description available"
+                # Fallback to some known versions if API fails
+                fallback_versions = ["b20151228.3", "b20150826.3", "b20150331.2", "b20141216.1", "b20131216.1"]
+                self.download_links = {}
+                self.version_descriptions = {v: "Fallback version" for v in fallback_versions}
+                self.version_images = {}
+                self.after(0, self._update_versions_ui, fallback_versions)
+                self.after(0, lambda: self.status_text.set(f"Using fallback versions (API failed)"))
+                return
             
             # Store data for later use
             self.download_links = download_links
@@ -301,15 +300,16 @@ class TitanicLauncher(ctk.CTk):
             
             # Update UI in main thread
             self.after(0, self._update_versions_ui, versions)
+            self.after(0, lambda: self.status_text.set(f"Loaded {len(versions)} versions from Titanic API"))
             
         except Exception as e:
             # Fallback to known versions on error
             fallback_versions = ["b20151228.3", "b20150826.3", "b20150331.2", "b20141216.1", "b20131216.1"]
             self.download_links = {}
-            self.version_descriptions = {v: "Fallback version - no description available" for v in fallback_versions}
+            self.version_descriptions = {v: "Fallback version" for v in fallback_versions}
             self.version_images = {}
             self.after(0, self._update_versions_ui, fallback_versions)
-            self.after(0, lambda: self.status_text.set(f"Using fallback versions (scraping failed: {str(e)})"))
+            self.after(0, lambda: self.status_text.set(f"Using fallback versions (API error: {str(e)})"))
 
     def _update_versions_ui(self, versions):
         """Update UI with fetched versions"""
@@ -539,8 +539,11 @@ class TitanicLauncher(ctk.CTk):
 
     def update_logo(self):
         """Update the logo display"""
-        if self.logo_image:
-            self.logo_label.configure(image=self.logo_image, text="")
+        if self.logo_image and hasattr(self.logo_image, 'cget'):
+            try:
+                self.logo_label.configure(image=self.logo_image, text="")
+            except Exception as e:
+                print(f"Failed to update logo: {e}")
 
     def handle_main_action(self):
         """Handle the main action button - always launch for installed versions"""
@@ -858,7 +861,23 @@ class TitanicLauncher(ctk.CTk):
         close_btn.pack(pady=(10, 0))
         
         # Set grab after window is fully configured
-        download_window.after(100, download_window.grab_set)
+        def set_grab_safely():
+            try:
+                # Release any existing grabs first
+                current_focus = self.focus_get()
+                if current_focus and hasattr(current_focus, 'grab_release'):
+                    try:
+                        current_focus.grab_release()
+                    except:
+                        pass
+                
+                # Set new grab
+                download_window.grab_set()
+                download_window.focus_set()
+            except Exception as e:
+                print(f"Grab failed: {e}")
+        
+        download_window.after(100, set_grab_safely)
 
     def download_from_dialog(self, version, window):
         """Download a version from the download dialog"""
@@ -941,7 +960,23 @@ class TitanicLauncher(ctk.CTk):
             image_label.configure(text="No preview image available")
         
         # Set grab after window is fully configured
-        preview_window.after(100, preview_window.grab_set)
+        def set_grab_safely():
+            try:
+                # Release any existing grabs first
+                current_focus = self.focus_get()
+                if current_focus and hasattr(current_focus, 'grab_release'):
+                    try:
+                        current_focus.grab_release()
+                    except:
+                        pass
+                
+                # Set new grab
+                preview_window.grab_set()
+                preview_window.focus_set()
+            except Exception as e:
+                print(f"Grab failed: {e}")
+        
+        preview_window.after(100, set_grab_safely)
 
     def load_preview_image_for_window(self, image_url, image_label):
         """Load preview image for preview window"""
@@ -1092,7 +1127,23 @@ class TitanicLauncher(ctk.CTk):
         close_btn.pack(pady=(10, 0))
         
         # Set grab after window is fully configured
-        options_window.after(100, options_window.grab_set)
+        def set_grab_safely():
+            try:
+                # Release any existing grabs first
+                current_focus = self.focus_get()
+                if current_focus and hasattr(current_focus, 'grab_release'):
+                    try:
+                        current_focus.grab_release()
+                    except:
+                        pass
+                
+                # Set new grab
+                options_window.grab_set()
+                options_window.focus_set()
+            except Exception as e:
+                print(f"Grab failed: {e}")
+        
+        options_window.after(100, set_grab_safely)
 
     def update_appearance_mode(self):
         """Update the appearance mode"""
