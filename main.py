@@ -14,6 +14,7 @@ import sys
 from PIL import Image, ImageTk
 import io
 import tempfile
+import base64
 
 # Set appearance mode and color theme
 ctk.set_appearance_mode("dark")
@@ -45,11 +46,19 @@ class TitanicLauncher(ctk.CTk):
         self.download_progress = ctk.DoubleVar()
         self.status_text = ctk.StringVar(value="Ready")
         self.current_version_name = None
-        self.logo_image = None
         
         # Options variables
         self.appearance_mode = ctk.StringVar(value="dark")
         self.accent_color = ctk.StringVar(value="blue")
+        
+        # Authentication variables
+        self.auth_token = None
+        self.user_data = {}
+        self.username = ctk.StringVar(value="Not logged in")
+        self.user_rank = ctk.StringVar(value="-")
+        self.user_pp = ctk.StringVar(value="-")
+        self.user_country = ctk.StringVar(value="-")
+        self.avatar_image = None
         
         # Grid configuration
         self.grid_columnconfigure(1, weight=1)
@@ -57,6 +66,7 @@ class TitanicLauncher(ctk.CTk):
 
         self.setup_ui()
         self.load_options_config()
+        self.load_auth_config()
         self.load_config()
         self.load_versions()
 
@@ -64,21 +74,56 @@ class TitanicLauncher(ctk.CTk):
         # === SIDEBAR ===
         self.sidebar_frame = ctk.CTkFrame(self, width=250, corner_radius=0)
         self.sidebar_frame.grid(row=0, column=0, sticky="nsew")
-        self.sidebar_frame.grid_rowconfigure(3, weight=1)
+        self.sidebar_frame.grid_rowconfigure(2, weight=1)
 
-        # Logo/Title
-        self.logo_label = ctk.CTkLabel(self.sidebar_frame, text="🚢", font=ctk.CTkFont(size=32, weight="bold"))
-        self.logo_label.grid(row=0, column=0, pady=(20, 5))
-        ctk.CTkLabel(self.sidebar_frame, text="ICEBERG", font=ctk.CTkFont(size=26, weight="bold")).grid(row=1, column=0, pady=(0, 20))
-        ctk.CTkLabel(self.sidebar_frame, text="Reviving old osu!", font=ctk.CTkFont(size=12), text_color="gray").grid(row=2, column=0, pady=(0, 10))
+        # Title only - no logo
+        ctk.CTkLabel(self.sidebar_frame, text="ICEBERG", font=ctk.CTkFont(size=18, weight="bold")).grid(row=0, column=0, pady=(20, 10))
         
-        # Logo configuration
-        self.logo_path = os.path.join(os.path.dirname(__file__), "logo.png")
-        self.logo_url = None
+        # User info section
+        user_frame = ctk.CTkFrame(self.sidebar_frame)
+        user_frame.grid(row=1, column=0, padx=15, pady=(0, 10), sticky="ew")
+        
+        # Avatar and username row
+        avatar_username_frame = ctk.CTkFrame(user_frame)
+        avatar_username_frame.pack(fill="x", padx=10, pady=(10, 5))
+        
+        # Avatar placeholder
+        self.avatar_label = ctk.CTkLabel(avatar_username_frame, text="👤", font=ctk.CTkFont(size=20), width=40, height=40)
+        self.avatar_label.pack(side="left", padx=(0, 10))
+        
+        # Username
+        username_label = ctk.CTkLabel(avatar_username_frame, textvariable=self.username, font=ctk.CTkFont(size=14, weight="bold"))
+        username_label.pack(side="left", anchor="w")
+        
+        # User stats
+        stats_frame = ctk.CTkFrame(user_frame)
+        stats_frame.pack(fill="x", padx=10, pady=(0, 10))
+        
+        # Rank
+        rank_frame = ctk.CTkFrame(stats_frame)
+        rank_frame.pack(fill="x", pady=2)
+        ctk.CTkLabel(rank_frame, text="Rank:", font=ctk.CTkFont(size=10)).pack(side="left", padx=(5, 2))
+        ctk.CTkLabel(rank_frame, textvariable=self.user_rank, font=ctk.CTkFont(size=10)).pack(side="left")
+        
+        # PP
+        pp_frame = ctk.CTkFrame(stats_frame)
+        pp_frame.pack(fill="x", pady=2)
+        ctk.CTkLabel(pp_frame, text="PP:", font=ctk.CTkFont(size=10)).pack(side="left", padx=(5, 2))
+        ctk.CTkLabel(pp_frame, textvariable=self.user_pp, font=ctk.CTkFont(size=10)).pack(side="left")
+        
+        # Country
+        country_frame = ctk.CTkFrame(stats_frame)
+        country_frame.pack(fill="x", pady=2)
+        ctk.CTkLabel(country_frame, text="Country:", font=ctk.CTkFont(size=10)).pack(side="left", padx=(5, 2))
+        ctk.CTkLabel(country_frame, textvariable=self.user_country, font=ctk.CTkFont(size=10)).pack(side="left")
+        
+        # Login/Logout button
+        self.auth_btn = ctk.CTkButton(user_frame, text="🔑 Login", command=self.open_login_dialog, height=30)
+        self.auth_btn.pack(fill="x", padx=10, pady=(0, 10))
 
         # Version list with scroll wheel support
         self.scrollable_list = ctk.CTkScrollableFrame(self.sidebar_frame, label_text="Installed Versions")
-        self.scrollable_list.grid(row=3, column=0, padx=15, pady=10, sticky="nsew")
+        self.scrollable_list.grid(row=2, column=0, padx=15, pady=10, sticky="nsew")
         
         # Enable scroll wheel support
         self.scrollable_list.bind("<MouseWheel>", self._on_mousewheel)
@@ -87,16 +132,16 @@ class TitanicLauncher(ctk.CTk):
 
         # Action buttons
         self.download_clients_btn = ctk.CTkButton(self.sidebar_frame, text="📥 Download Clients", command=self.open_download_dialog, fg_color="#1bd964", hover_color="#15a34a", text_color="black")
-        self.download_clients_btn.grid(row=4, column=0, padx=20, pady=5)
+        self.download_clients_btn.grid(row=3, column=0, padx=20, pady=5)
         
         self.options_btn = ctk.CTkButton(self.sidebar_frame, text="⚙️ Options", command=self.open_options_dialog, fg_color="#6c757d")
-        self.options_btn.grid(row=5, column=0, padx=20, pady=5)
+        self.options_btn.grid(row=4, column=0, padx=20, pady=5)
         
         self.refresh_btn = ctk.CTkButton(self.sidebar_frame, text="🔄 Refresh Versions", command=self.load_versions, fg_color="gray25")
-        self.refresh_btn.grid(row=6, column=0, padx=20, pady=5)
+        self.refresh_btn.grid(row=5, column=0, padx=20, pady=5)
 
         self.delete_btn = ctk.CTkButton(self.sidebar_frame, text="🗑️ Delete Version", fg_color="#cf3838", hover_color="#8a2525", command=self.delete_version)
-        self.delete_btn.grid(row=7, column=0, padx=20, pady=(5, 20))
+        self.delete_btn.grid(row=6, column=0, padx=20, pady=(5, 20))
 
         # === MAIN PANEL ===
         self.main_frame = ctk.CTkFrame(self, corner_radius=0, fg_color="transparent")
@@ -209,14 +254,14 @@ class TitanicLauncher(ctk.CTk):
         self.details_collapsed = False
         self.settings_collapsed = False
 
-        # Progress section
-        ctk.CTkLabel(self.settings_frame, text="Download Progress").pack(anchor="w", padx=20, pady=(10, 0))
-        self.progress_bar = ctk.CTkProgressBar(self.settings_frame)
+        # Progress section (move to main frame)
+        ctk.CTkLabel(self.main_frame, text="Download Progress").pack(anchor="w", padx=20, pady=(10, 0))
+        self.progress_bar = ctk.CTkProgressBar(self.main_frame)
         self.progress_bar.pack(fill="x", padx=20, pady=(5, 10))
         self.progress_bar.set(0)
 
-        # Folder buttons
-        self.folder_btn = ctk.CTkButton(self.settings_frame, text="📂 Open Versions Folder", command=self.open_versions_folder, fg_color="gray30")
+        # Folder buttons (move to main frame)
+        self.folder_btn = ctk.CTkButton(self.main_frame, text="📂 Open Versions Folder", command=self.open_versions_folder, fg_color="gray30")
         self.folder_btn.pack(fill="x", padx=20, pady=(10, 5))
 
         # Status and dynamic launch/download button
@@ -319,9 +364,6 @@ class TitanicLauncher(ctk.CTk):
         
         self.status_text.set(f"Found {len(versions)} versions")
         self.refresh_version_buttons()
-        
-        # Start logo download in background
-        threading.Thread(target=self.download_logo, daemon=True).start()
     
     @staticmethod
     def version_key(v):
@@ -523,27 +565,15 @@ class TitanicLauncher(ctk.CTk):
 
     def download_logo(self):
         """Load and set the logo from local file"""
-        try:
-            if os.path.exists(self.logo_path):
-                # Load logo from local file
-                img = Image.open(self.logo_path)
-                # Resize to appropriate size for sidebar
-                img = img.resize((60, 60), Image.Resampling.LANCZOS)
-                self.logo_image = ctk.CTkImage(light_image=img, dark_image=img, size=(60, 60))
-                self.after(0, self.update_logo)
-            else:
-                # If logo.png doesn't exist, keep the emoji
-                print(f"Logo file not found at {self.logo_path}, keeping emoji")
-        except Exception as e:
-            print(f"Failed to load logo: {e}")
+        # Logo functionality has been removed - this method is kept for compatibility
+        # but no longer loads any logo since we removed the logo display
+        pass
 
     def update_logo(self):
         """Update the logo display"""
-        if self.logo_image and hasattr(self.logo_image, 'cget'):
-            try:
-                self.logo_label.configure(image=self.logo_image, text="")
-            except Exception as e:
-                print(f"Failed to update logo: {e}")
+        # Logo functionality has been removed - this method is kept for compatibility
+        # but no longer updates any logo since we removed the logo display
+        pass
 
     def handle_main_action(self):
         """Handle the main action button - always launch for installed versions"""
@@ -1406,11 +1436,344 @@ echo "export PATH=\"$PATH:{user_bin}\""
                 'accent_color': self.accent_color.get()
             }
             
+            # Add auth data if logged in
+            if self.auth_token:
+                config['auth'] = {
+                    'token': self.auth_token,
+                    'user_data': self.user_data
+                }
+            
             # Save config
             with open(self.config_file, 'w') as f:
                 json.dump(config, f, indent=2)
         except Exception as e:
             print(f"Failed to save options config: {e}")
+
+    def load_auth_config(self):
+        """Load authentication configuration"""
+        try:
+            if os.path.exists(self.config_file):
+                with open(self.config_file, 'r') as f:
+                    config = json.load(f)
+                    
+                if 'auth' in config:
+                    self.auth_token = config['auth'].get('token')
+                    self.user_data = config['auth'].get('user_data', {})
+                    self.update_user_display()
+        except Exception as e:
+            print(f"Failed to load auth config: {e}")
+
+    def open_login_dialog(self):
+        """Open login dialog"""
+        if self.auth_token:
+            # Already logged in, show logout confirmation
+            if messagebox.askyesno("Logout", f"Logout from {self.username.get()}?"):
+                self.logout()
+            return
+        
+        # Create login dialog
+        login_window = ctk.CTkToplevel(self)
+        login_window.title("Login to Titanic")
+        login_window.geometry("400x300")
+        login_window.transient(self)
+        
+        # Make window visible before grabbing
+        login_window.update()
+        
+        # Set grab after window is visible
+        def set_grab_safely():
+            try:
+                # Release any existing grabs first
+                current_focus = self.focus_get()
+                if current_focus and hasattr(current_focus, 'grab_release'):
+                    try:
+                        current_focus.grab_release()
+                    except:
+                        pass
+                
+                # Set new grab
+                login_window.grab_set()
+                login_window.focus_set()
+            except Exception as e:
+                print(f"Grab failed: {e}")
+        
+        login_window.after(100, set_grab_safely)
+        
+        # Center the dialog
+        login_window.update_idletasks()
+        x = (login_window.winfo_screenwidth() // 2) - (400 // 2)
+        y = (login_window.winfo_screenheight() // 2) - (300 // 2)
+        login_window.geometry(f"400x300+{x}+{y}")
+        
+        main_frame = ctk.CTkFrame(login_window)
+        main_frame.pack(fill="both", expand=True, padx=20, pady=20)
+        
+        # Title
+        ctk.CTkLabel(main_frame, text="Login to Titanic", font=ctk.CTkFont(size=20, weight="bold")).pack(pady=(0, 20))
+        
+        # Username
+        ctk.CTkLabel(main_frame, text="Username:").pack(anchor="w")
+        username_entry = ctk.CTkEntry(main_frame, width=300)
+        username_entry.pack(fill="x", pady=(0, 10))
+        
+        # Password
+        ctk.CTkLabel(main_frame, text="Password:").pack(anchor="w")
+        password_entry = ctk.CTkEntry(main_frame, width=300, show="*")
+        password_entry.pack(fill="x", pady=(0, 20))
+        
+        # Buttons
+        button_frame = ctk.CTkFrame(main_frame)
+        button_frame.pack(fill="x")
+        
+        def do_login():
+            username = username_entry.get().strip()
+            password = password_entry.get().strip()
+            
+            if not username or not password:
+                messagebox.showerror("Error", "Please enter username and password")
+                return
+            
+            # Disable buttons during login
+            login_btn.configure(state="disabled")
+            cancel_btn.configure(state="disabled")
+            
+            # Start login in background thread
+            threading.Thread(target=self.login_to_titanic, args=(username, password, login_window), daemon=True).start()
+        
+        login_btn = ctk.CTkButton(button_frame, text="Login", command=do_login)
+        login_btn.pack(side="left", padx=(0, 10))
+        
+        cancel_btn = ctk.CTkButton(button_frame, text="Cancel", command=login_window.destroy, fg_color="#6c757d")
+        cancel_btn.pack(side="left")
+        
+        # Focus on username entry
+        username_entry.focus()
+        login_window.bind("<Return>", lambda e: do_login())
+
+    def login_to_titanic(self, username, password, login_window):
+        """Login to Titanic API"""
+        try:
+            # Create Basic Auth header
+            credentials = f"{username}:{password}"
+            encoded_credentials = base64.b64encode(credentials.encode()).decode()
+            
+            headers = {
+                "Authorization": f"Basic {encoded_credentials}",
+                "Content-Type": "application/json"
+            }
+            
+            # Make login request
+            response = requests.post(
+                "https://api.titanic.sh/account/login",
+                headers=headers,
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                token_data = response.json()
+                self.auth_token = token_data["access_token"]
+                
+                # Get user data
+                self.fetch_user_data()
+                
+                # Update UI
+                self.after(0, lambda: self.update_user_display())
+                self.after(0, lambda: self.save_options_config())
+                self.after(0, lambda: login_window.destroy())
+                self.after(0, lambda: messagebox.showinfo("Success", f"Logged in as {self.username.get()}!"))
+            else:
+                error_msg = "Login failed"
+                try:
+                    error_data = response.json()
+                    error_msg = error_data.get("details", error_msg)
+                except:
+                    pass
+                
+                self.after(0, lambda: messagebox.showerror("Login Failed", error_msg))
+                
+        except Exception as e:
+            self.after(0, lambda: messagebox.showerror("Login Error", f"An error occurred: {str(e)}"))
+        finally:
+            # Re-enable buttons
+            self.after(0, lambda: login_window.children["!ctkframe"].children["!ctkframe"].children["!ctkbutton"].configure(state="normal"))
+            self.after(0, lambda: login_window.children["!ctkframe"].children["!ctkframe"].children["!ctkbutton2"].configure(state="normal"))
+
+    def fetch_user_data(self):
+        """Fetch user data from API"""
+        try:
+            if not self.auth_token:
+                return
+            
+            headers = {
+                "Authorization": f"Bearer {self.auth_token}",
+                "Content-Type": "application/json"
+            }
+            
+            # Get user profile
+            response = requests.get(
+                "https://api.titanic.sh/account/profile",
+                headers=headers,
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                user_profile = response.json()
+                self.user_data = {
+                    'username': user_profile.get('name', 'Unknown'),
+                    'id': user_profile.get('id', 0),
+                    'country': user_profile.get('country', 'US'),
+                    'stats': user_profile.get('stats', [])
+                }
+                
+                # Extract stats for the preferred mode
+                stats = user_profile.get('stats', [])
+                if stats:
+                    # Find stats for the preferred mode (usually first one or mode 0 for osu!std)
+                    preferred_stats = None
+                    for stat in stats:
+                        if stat.get('mode') == user_profile.get('preferred_mode', 0):
+                            preferred_stats = stat
+                            break
+                    
+                    # If no preferred mode found, use first stats
+                    if not preferred_stats and stats:
+                        preferred_stats = stats[0]
+                    
+                    if preferred_stats:
+                        self.user_data['rank'] = preferred_stats.get('rank', 0)
+                        self.user_data['pp'] = preferred_stats.get('pp', 0)
+                        self.user_data['country_rank'] = preferred_stats.get('country_rank', 0)
+                
+                # Fetch user avatar
+                self.fetch_user_avatar(user_profile.get('id', 0))
+                
+                # Store user ID for avatar fetching
+                self.user_data['id'] = user_profile.get('id', 0)
+                        
+            else:
+                # Use basic info
+                self.user_data = {
+                    'username': 'User',
+                    'id': 0,
+                    'country': 'US',
+                    'rank': 0,
+                    'pp': 0,
+                    'country_rank': 0
+                }
+                
+        except Exception as e:
+            print(f"Failed to fetch user data: {e}")
+            self.user_data = {
+                'username': 'User',
+                'id': 0,
+                'country': 'US',
+                'rank': 0,
+                'pp': 0,
+                'country_rank': 0
+            }
+
+    def fetch_user_avatar(self, user_id):
+        """Fetch user avatar from Titanic API"""
+        try:
+            if not user_id or user_id == 0:
+                return
+            
+            # Try common avatar URL patterns for osu-like servers
+            avatar_urls = [
+                f"https://osu.titanic.sh/a/{user_id}",  # Correct pattern: osu.titanic.sh/a/user_id
+                f"https://a.titanic.sh/{user_id}",  # Alternative pattern
+                f"https://osu.titanic.sh/images/avatars/{user_id}",  # Fallback pattern
+                f"https://cdn.titanic.sh/avatars/{user_id}",  # CDN pattern
+            ]
+            
+            # Try each URL pattern
+            for avatar_url in avatar_urls:
+                try:
+                    response = requests.head(avatar_url, timeout=5)
+                    if response.status_code == 200:
+                        print(f"Found avatar at: {avatar_url}")
+                        self.load_avatar_image(avatar_url)
+                        return
+                except:
+                    continue
+            
+            print(f"No avatar found for user {user_id}")
+            
+        except Exception as e:
+            print(f"Failed to fetch user avatar: {e}")
+            # Keep default avatar
+
+    def load_avatar_image(self, avatar_url):
+        """Load user avatar image from URL"""
+        try:
+            # Add proper headers to mimic browser request
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'Referer': 'https://osu.titanic.sh/',
+                'Accept': 'image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9'
+            }
+            
+            response = requests.get(avatar_url, headers=headers, timeout=10)
+            response.raise_for_status()
+            
+            # Load image
+            img = Image.open(io.BytesIO(response.content))
+            # Resize to avatar size (40x40)
+            img = img.resize((40, 40), Image.Resampling.LANCZOS)
+            
+            # Create CTkImage
+            self.avatar_image = ctk.CTkImage(light_image=img, dark_image=img, size=(40, 40))
+            
+            # Update avatar display
+            self.after(0, self.update_avatar_display)
+            
+        except Exception as e:
+            print(f"Failed to load avatar image: {e}")
+            # Keep default avatar
+
+    def update_user_display(self):
+        """Update user display in sidebar"""
+        if self.auth_token and self.user_data:
+            self.username.set(self.user_data.get('username', 'Unknown'))
+            self.auth_btn.configure(text="🚪 Logout")
+            
+            # Display real user stats
+            rank = self.user_data.get('rank', 0)
+            pp = self.user_data.get('pp', 0)
+            country = self.user_data.get('country', 'US')
+            
+            self.user_rank.set(f"#{rank:,}" if rank > 0 else "-")
+            self.user_pp.set(f"{pp:.2f}" if pp > 0 else "-")
+            self.user_country.set(country)
+        else:
+            self.username.set("Not logged in")
+            self.user_rank.set("-")
+            self.user_pp.set("-")
+            self.user_country.set("-")
+            self.auth_btn.configure(text="🔑 Login")
+            # Reset avatar
+            self.avatar_image = None
+            self.update_avatar_display()
+
+    def update_avatar_display(self):
+        """Update avatar display in sidebar"""
+        if self.avatar_image and hasattr(self.avatar_image, 'cget'):
+            try:
+                self.avatar_label.configure(image=self.avatar_image, text="")
+            except Exception as e:
+                print(f"Failed to update avatar: {e}")
+                self.avatar_label.configure(text="👤")
+        else:
+            self.avatar_label.configure(text="👤")
+
+    def logout(self):
+        """Logout user"""
+        self.auth_token = None
+        self.user_data = {}
+        self.update_user_display()
+        self.save_options_config()
+        messagebox.showinfo("Logged Out", "You have been logged out.")
 
     def load_options_config(self):
         """Load options configuration"""
