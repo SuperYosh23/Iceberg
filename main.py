@@ -116,10 +116,6 @@ class TitanicLauncher(ctk.CTk):
         country_frame.pack(fill="x", pady=2)
         ctk.CTkLabel(country_frame, text="Country:", font=ctk.CTkFont(size=10)).pack(side="left", padx=(5, 2))
         ctk.CTkLabel(country_frame, textvariable=self.user_country, font=ctk.CTkFont(size=10)).pack(side="left")
-        
-        # Login/Logout button
-        self.auth_btn = ctk.CTkButton(user_frame, text="🔑 Login", command=self.open_login_dialog, height=30)
-        self.auth_btn.pack(fill="x", padx=10, pady=(0, 10))
 
         # Version list with scroll wheel support
         self.scrollable_list = ctk.CTkScrollableFrame(self.sidebar_frame, label_text="Installed Versions")
@@ -824,7 +820,45 @@ class TitanicLauncher(ctk.CTk):
             command_str = ' '.join(cmd)
             self.log_to_console(f"Executing: {command_str}")
             print(f"Launching with command: {command_str}")
-            subprocess.Popen(cmd, cwd=version_path)
+            
+            # Launch with output capture
+            try:
+                process = subprocess.Popen(
+                    cmd, 
+                    cwd=version_path,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    bufsize=1,
+                    universal_newlines=True
+                )
+                
+                # Start a thread to read output and send to console
+                def read_output():
+                    try:
+                        for line in iter(process.stdout.readline, ''):
+                            if line:
+                                # Remove trailing whitespace and log to console
+                                clean_line = line.rstrip()
+                                if clean_line:  # Only log non-empty lines
+                                    self.log_to_console(f"[GAME] {clean_line}")
+                        
+                        # Wait for process to complete
+                        process.wait()
+                        self.log_to_console(f"[GAME] Process exited with code: {process.returncode}")
+                        
+                    except Exception as e:
+                        self.log_to_console(f"[GAME] Error reading output: {e}", "ERROR")
+                
+                # Start output reader thread
+                output_thread = threading.Thread(target=read_output, daemon=True)
+                output_thread.start()
+                
+                self.log_to_console(f"Successfully launched {display_name} (PID: {process.pid})", "SUCCESS")
+                
+            except Exception as e:
+                self.log_to_console(f"Failed to start process: {e}", "ERROR")
+                raise e
             
             self.status_text.set(f"Launched {display_name}")
             self.log_to_console(f"Successfully launched {display_name}", "SUCCESS")
@@ -1225,6 +1259,17 @@ class TitanicLauncher(ctk.CTk):
         
         ctk.CTkLabel(tools_frame, text="Tools", font=ctk.CTkFont(size=18, weight="bold")).pack(anchor="w", padx=10, pady=(10, 5))
         
+        # Login/Logout button
+        auth_btn_text = "🚪 Logout" if self.auth_token else "🔑 Login"
+        auth_btn = ctk.CTkButton(
+            tools_frame,
+            text=auth_btn_text,
+            fg_color="#17a2b8",
+            hover_color="#138496",
+            command=self.open_login_dialog
+        )
+        auth_btn.pack(fill="x", padx=10, pady=5)
+        
         # osu-wine download button
         self.osuwine_btn = ctk.CTkButton(
             tools_frame,
@@ -1244,6 +1289,7 @@ class TitanicLauncher(ctk.CTk):
         help_text.insert("0.0", 
             "Theme: Switch between dark and light modes\n"
             "Accent Color: Change the primary color theme\n"
+            "Login/Logout: Sign in or out of your Titanic account\n"
             "osu-wine: Download the osu-wine launcher for running Titanic clients"
         )
         help_text.configure(state="disabled")
@@ -1556,6 +1602,13 @@ echo "export PATH=\"$PATH:{user_bin}\""
                     self.auth_token = config['auth'].get('token')
                     self.user_data = config['auth'].get('user_data', {})
                     self.update_user_display()
+                    
+                    # Fetch avatar on startup
+                    if self.auth_token and self.user_data:
+                        user_id = self.user_data.get('id', 0)
+                        if user_id and user_id != 0:
+                            print(f"Fetching avatar on startup for user {user_id}")
+                            self.fetch_user_avatar(user_id)
         except Exception as e:
             print(f"Failed to load auth config: {e}")
 
@@ -1774,26 +1827,12 @@ echo "export PATH=\"$PATH:{user_bin}\""
             if not user_id or user_id == 0:
                 return
             
-            # Try common avatar URL patterns for osu-like servers
-            avatar_urls = [
-                f"https://osu.titanic.sh/a/{user_id}",  # Correct pattern: osu.titanic.sh/a/user_id
-                f"https://a.titanic.sh/{user_id}",  # Alternative pattern
-                f"https://osu.titanic.sh/images/avatars/{user_id}",  # Fallback pattern
-                f"https://cdn.titanic.sh/avatars/{user_id}",  # CDN pattern
-            ]
+            # Use the correct avatar URL pattern
+            avatar_url = f"https://osu.titanic.sh/a/{user_id}"
             
-            # Try each URL pattern
-            for avatar_url in avatar_urls:
-                try:
-                    response = requests.head(avatar_url, timeout=5)
-                    if response.status_code == 200:
-                        print(f"Found avatar at: {avatar_url}")
-                        self.load_avatar_image(avatar_url)
-                        return
-                except:
-                    continue
-            
-            print(f"No avatar found for user {user_id}")
+            # Directly try to load the avatar image
+            print(f"Attempting to load avatar from: {avatar_url}")
+            self.load_avatar_image(avatar_url)
             
         except Exception as e:
             print(f"Failed to fetch user avatar: {e}")
@@ -1832,7 +1871,6 @@ echo "export PATH=\"$PATH:{user_bin}\""
         """Update user display in sidebar"""
         if self.auth_token and self.user_data:
             self.username.set(self.user_data.get('username', 'Unknown'))
-            self.auth_btn.configure(text="🚪 Logout")
             
             # Display real user stats
             rank = self.user_data.get('rank', 0)
@@ -1847,7 +1885,6 @@ echo "export PATH=\"$PATH:{user_bin}\""
             self.user_rank.set("-")
             self.user_pp.set("-")
             self.user_country.set("-")
-            self.auth_btn.configure(text="🔑 Login")
             # Reset avatar
             self.avatar_image = None
             self.update_avatar_display()
@@ -1913,6 +1950,9 @@ echo "export PATH=\"$PATH:{user_bin}\""
         import datetime
         timestamp = datetime.datetime.now().strftime("%H:%M:%S")
         
+        # Check if this is a game message
+        is_game_message = message.startswith("[GAME]")
+        
         # Color coding for different levels
         if level == "ERROR":
             prefix = f"[{timestamp}] [ERROR] "
@@ -1920,19 +1960,25 @@ echo "export PATH=\"$PATH:{user_bin}\""
             prefix = f"[{timestamp}] [WARN]  "
         elif level == "SUCCESS":
             prefix = f"[{timestamp}] [SUCCESS] "
+        elif is_game_message:
+            prefix = f"[{timestamp}] [GAME]  "
         else:
             prefix = f"[{timestamp}] [INFO]  "
         
         full_message = f"{prefix}{message}\n"
         
         # Update console in main thread
-        self.after(0, lambda: self._update_console(full_message))
+        self.after(0, lambda: self._update_console(full_message, is_game_message))
 
-    def _update_console(self, message):
+    def _update_console(self, message, is_game_message=False):
         """Update console text widget (must be called from main thread)"""
         try:
             self.console_text.configure(state="normal")
+            
+            # For game messages, we'll just insert them normally since CTkTextbox doesn't support tags
+            # The [GAME] prefix will help distinguish them
             self.console_text.insert("end", message)
+            
             self.console_text.see("end")  # Auto-scroll to bottom
             self.console_text.configure(state="disabled")
         except Exception as e:
