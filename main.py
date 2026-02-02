@@ -1270,7 +1270,7 @@ class TitanicLauncher(ctk.CTk):
         # Create options window
         options_window = ctk.CTkToplevel(self)
         options_window.title("Options")
-        options_window.geometry("500x400")
+        options_window.geometry("500x606")
         options_window.transient(self)
         
         # Main frame
@@ -1351,6 +1351,29 @@ class TitanicLauncher(ctk.CTk):
             # Update button state based on installation status
             self.update_osuwine_button_state()
         
+        # Audio Fix button (only show on Linux)
+        if not self.is_windows():
+            audio_fix_frame = ctk.CTkFrame(tools_frame)
+            audio_fix_frame.pack(fill="x", padx=10, pady=5)
+            
+            audio_fix_btn = ctk.CTkButton(
+                audio_fix_frame,
+                text="🔊 Run Audio Fix",
+                fg_color="#28a745",
+                hover_color="#218838",
+                command=self.run_audio_fix
+            )
+            audio_fix_btn.pack(fill="x", pady=(0, 5))
+            
+            # Help message for audio fix
+            audio_help_label = ctk.CTkLabel(
+                audio_fix_frame,
+                text="If you are having audio issues and/or cannot submit scores, try this",
+                font=ctk.CTkFont(size=10),
+                text_color="gray"
+            )
+            audio_help_label.pack(pady=(0, 5))
+        
         # Help text
         help_text = ctk.CTkTextbox(main_frame, height=80, font=ctk.CTkFont(size=10))
         help_text.pack(fill="x", pady=(0, 20))
@@ -1365,7 +1388,8 @@ class TitanicLauncher(ctk.CTk):
             help_content = ("Theme: Switch between dark and light modes\n"
                           "Accent Color: Change the primary color theme\n"
                           "Login/Logout: Sign in or out of your Titanic account\n"
-                          "osu-wine: Download the osu-wine launcher for running Titanic clients")
+                          "osu-wine: Download the osu-wine launcher for running Titanic clients\n"
+                          "Audio Fix: Fix audio issues and score submission problems")
         
         help_text.insert("0.0", help_content)
         help_text.configure(state="disabled")
@@ -1464,6 +1488,84 @@ class TitanicLauncher(ctk.CTk):
             
         except (subprocess.TimeoutExpired, FileNotFoundError, subprocess.CalledProcessError, ImportError):
             return False
+
+    def run_audio_fix(self):
+        """Run the audio fix command using osu-wine"""
+        try:
+            # Check if osu-wine is available
+            if not self.check_osuwine_installed():
+                messagebox.showerror("osu-wine Not Found", 
+                    "osu-wine is not installed or not found in PATH.\n\n"
+                    "Please install osu-wine first using the 'Download osu-wine' button.")
+                return
+            
+            # Ask for confirmation
+            if not messagebox.askyesno("Run Audio Fix", 
+                "This will run the following command:\n"
+                "osu-wine –winetricks sound=alsa\n\n"
+                "This may take a few moments to complete.\n\n"
+                "Continue?"):
+                return
+            
+            # Run the command
+            self.log_to_console("Running audio fix: osu-wine –winetricks sound=alsa")
+            self.status_text.set("Running audio fix...")
+            
+            # Run in a separate thread to avoid blocking UI
+            def run_command():
+                try:
+                    result = subprocess.run(
+                        ["osu-wine", "–winetricks", "sound=alsa"],
+                        capture_output=True,
+                        text=True,
+                        timeout=60
+                    )
+                    
+                    # Update UI in main thread
+                    self.after(0, lambda: self._handle_audio_fix_result(result))
+                    
+                except subprocess.TimeoutExpired:
+                    self.after(0, lambda: self._handle_audio_fix_timeout())
+                except Exception as e:
+                    self.after(0, lambda: self._handle_audio_fix_error(str(e)))
+            
+            threading.Thread(target=run_command, daemon=True).start()
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to run audio fix: {str(e)}")
+
+    def _handle_audio_fix_result(self, result):
+        """Handle the result of the audio fix command"""
+        if result.returncode == 0:
+            self.log_to_console("Audio fix completed successfully", "SUCCESS")
+            self.status_text.set("Audio fix completed successfully")
+            messagebox.showinfo("Success", 
+                "Audio fix completed successfully!\n\n"
+                "Try launching the game again to see if the audio issues are resolved.")
+        else:
+            self.log_to_console(f"Audio fix failed: {result.stderr}", "ERROR")
+            self.status_text.set("Audio fix failed")
+            messagebox.showerror("Audio Fix Failed", 
+                f"The audio fix command failed.\n\n"
+                f"Error: {result.stderr}\n\n"
+                f"Please check the console output for more details.")
+
+    def _handle_audio_fix_timeout(self):
+        """Handle timeout of the audio fix command"""
+        self.log_to_console("Audio fix timed out", "ERROR")
+        self.status_text.set("Audio fix timed out")
+        messagebox.showerror("Timeout", 
+            "The audio fix command timed out after 60 seconds.\n\n"
+            "Please try running it manually in the terminal:\n"
+            "osu-wine –winetricks sound=alsa")
+
+    def _handle_audio_fix_error(self, error_msg):
+        """Handle error in the audio fix command"""
+        self.log_to_console(f"Audio fix error: {error_msg}", "ERROR")
+        self.status_text.set("Audio fix error")
+        messagebox.showerror("Error", 
+            f"An error occurred while running the audio fix:\n\n"
+            f"{error_msg}")
 
     def find_osuwine_executable(self):
         """Find the full path to osu-wine executable"""
