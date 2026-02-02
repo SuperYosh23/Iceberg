@@ -47,6 +47,9 @@ class TitanicLauncher(ctk.CTk):
         self.status_text = ctk.StringVar(value="Ready")
         self.current_version_name = None
         
+        # Drag and drop variables
+        self.version_buttons = {}  # Store references to version buttons
+        
         # Options variables
         self.appearance_mode = ctk.StringVar(value="dark")
         self.accent_color = ctk.StringVar(value="blue")
@@ -441,13 +444,10 @@ class TitanicLauncher(ctk.CTk):
             widget.destroy()
         
         self.scrollable_list.grid_columnconfigure(0, weight=1)
+        self.version_buttons.clear()
         
-        # Only show installed versions in sidebar
-        installed_versions = []
-        for version in self.versions:
-            version_path = os.path.join(self.versions_dir, version)
-            if os.path.exists(version_path) and os.path.exists(os.path.join(version_path, "osu!.exe")):
-                installed_versions.append(version)
+        # Get installed versions in custom order if available, otherwise default order
+        installed_versions = self.get_installed_versions_in_order()
         
         # Add buttons for installed versions only
         for i, version in enumerate(installed_versions):
@@ -455,9 +455,14 @@ class TitanicLauncher(ctk.CTk):
             config = self.get_version_config(version)
             display_name = config['custom_name']
             
-            # Create button for installed version - normal styling
+            # Create frame for version button and controls
+            version_frame = ctk.CTkFrame(self.scrollable_list)
+            version_frame.grid(row=i, column=0, sticky="ew", pady=2)
+            version_frame.grid_columnconfigure(0, weight=1)
+            
+            # Create version button
             btn = ctk.CTkButton(
-                self.scrollable_list,
+                version_frame,
                 text=display_name,
                 fg_color="transparent",
                 border_width=1,
@@ -465,8 +470,39 @@ class TitanicLauncher(ctk.CTk):
                 height=40,
                 command=lambda v=version: self.select_version(v)
             )
-            btn.grid(row=i, column=0, sticky="ew", pady=2)
+            btn.grid(row=0, column=0, sticky="ew", padx=(0, 5))
             btn.configure(text_color=("gray10", "gray90"))
+            
+            # Create control buttons frame
+            control_frame = ctk.CTkFrame(version_frame, fg_color="transparent")
+            control_frame.grid(row=0, column=1, sticky="ns")
+            
+            # Up button
+            up_btn = ctk.CTkButton(
+                control_frame,
+                text="▲",
+                width=25,
+                height=20,
+                fg_color="gray30",
+                text_color=("gray10", "gray90"),
+                command=lambda v=version: self.move_version_up(v)
+            )
+            up_btn.grid(row=0, column=0, padx=(0, 2))
+            
+            # Down button
+            down_btn = ctk.CTkButton(
+                control_frame,
+                text="▼",
+                width=25,
+                height=20,
+                fg_color="gray30",
+                text_color=("gray10", "gray90"),
+                command=lambda v=version: self.move_version_down(v)
+            )
+            down_btn.grid(row=1, column=0, padx=(0, 0))
+            
+            # Store reference
+            self.version_buttons[version] = btn
         
         # If no versions installed, show message
         if not installed_versions:
@@ -477,6 +513,68 @@ class TitanicLauncher(ctk.CTk):
                 text_color="gray"
             )
             no_versions_label.grid(row=0, column=0, pady=20)
+
+    def get_installed_versions_in_order(self):
+        """Get installed versions in custom order if available"""
+        # Get all installed versions
+        installed_versions = []
+        for version in self.versions:
+            version_path = os.path.join(self.versions_dir, version)
+            if os.path.exists(version_path) and os.path.exists(os.path.join(version_path, "osu!.exe")):
+                installed_versions.append(version)
+        
+        # Check if we have a custom order saved
+        version_order = self.version_configs.get('_version_order', [])
+        
+        # Filter the order to only include installed versions
+        ordered_versions = [v for v in version_order if v in installed_versions]
+        
+        # Add any newly installed versions that aren't in the order yet
+        for version in installed_versions:
+            if version not in ordered_versions:
+                ordered_versions.append(version)
+        
+        return ordered_versions
+
+    def move_version_up(self, version):
+        """Move a version up in the list"""
+        version_order = self.get_installed_versions_in_order()
+        
+        try:
+            current_index = version_order.index(version)
+            if current_index > 0:
+                # Swap with previous version
+                version_order[current_index], version_order[current_index - 1] = \
+                    version_order[current_index - 1], version_order[current_index]
+                
+                # Save the new order
+                self.version_configs['_version_order'] = version_order
+                self.save_config()
+                
+                # Refresh the buttons
+                self.refresh_version_buttons()
+        except ValueError:
+            pass
+
+    def move_version_down(self, version):
+        """Move a version down in the list"""
+        version_order = self.get_installed_versions_in_order()
+        
+        try:
+            current_index = version_order.index(version)
+            if current_index < len(version_order) - 1:
+                # Swap with next version
+                version_order[current_index], version_order[current_index + 1] = \
+                    version_order[current_index + 1], version_order[current_index]
+                
+                # Save the new order
+                self.version_configs['_version_order'] = version_order
+                self.save_config()
+                
+                # Refresh the buttons
+                self.refresh_version_buttons()
+        except ValueError:
+            pass
 
     def select_version(self, version):
         """Select a version and display its details"""
