@@ -6,12 +6,13 @@ A modern, feature-rich GUI launcher for Titanic osu! versions on Linux. Automati
 
 ### Core Functionality
 - **Modern UI**: Clean, professional interface using CustomTkinter with dark/light mode support
-- **Automatic Version Fetching**: Scrapes Titanic website to find available versions
+- **API-Based Version Fetching**: Uses official Titanic API to find available versions
 - **Smart Download**: Tries multiple download URLs to find the correct one
 - **Version Management**: Install, launch, and delete different versions
 - **Progress Tracking**: Shows download and extraction progress with visual feedback
 - **Size Display**: Shows installed version sizes in human-readable format
 - **Linux Support**: Launches games using `osu-wine --wine` command
+- **Scrollable Interface**: Both sidebar and main area support mouse wheel scrolling
 
 ### Advanced Features
 - **Per-Version Configuration**: Custom names and launch arguments for each version
@@ -22,6 +23,7 @@ A modern, feature-rich GUI launcher for Titanic osu! versions on Linux. Automati
 - **Preview System**: View screenshots and descriptions before downloading
 - **Custom Logo Support**: Uses logo.png file if available (falls back to emoji)
 - **Persistent Settings**: All configurations saved automatically
+- **Console Logging**: Built-in console output for debugging and progress tracking
 
 ## Requirements
 
@@ -90,23 +92,24 @@ A modern, feature-rich GUI launcher for Titanic osu! versions on Linux. Automati
 - **Accent Colors**: Choose from blue, green, dark-blue, or red themes
 - **Custom Logo**: Add logo.png for branding
 - **Collapsible Sections**: Organize interface by collapsing unused sections
+- **Scrollable Interface**: Use mouse wheel to scroll through content
 
 **Version Management**:
 - **Custom Names**: Rename versions for better organization
 - **Launch Arguments**: Add custom arguments for each version
 - **Preview System**: See screenshots and descriptions before downloading
 - **Size Tracking**: Monitor disk usage of installed versions
+- **Console Logging**: View detailed logs for debugging and progress tracking
 
-## Web Scraping Features
+## API Integration
 
-The launcher automatically fetches versions from the Titanic website using the correct structure:
-- Scrapes `https://osu.titanic.sh/download/` for available versions
-- Extracts version numbers from `<p class="version">` elements
-- Gets download URLs from `<a class="download-link">` elements
-- Versions are in format like `b20151228.3`, `b20150826.3`, etc.
-- Downloads from `https://cdn.titanic.sh/clients/{version}.zip`
-- Falls back to known versions if scraping fails
-- Versions are sorted from newest to oldest by date
+The launcher automatically fetches versions from the official Titanic API:
+- **API Endpoint**: `https://api.titanic.sh/releases`
+- **Version Data**: Fetches names, descriptions, download URLs, and screenshots
+- **Smart Fallbacks**: Uses multiple URL patterns if primary downloads fail
+- **Version Format**: Standard Titanic format like `b20151228.3`, `b20150826.3`, etc.
+- **Automatic Sorting**: Versions sorted from newest to oldest by date
+- **Error Handling**: Graceful fallback to known versions if API is unavailable
 
 ## Configuration
 
@@ -141,12 +144,14 @@ osu-wine --wine '/path/to/osu!.exe' [custom-arguments]
 
 ## Notes
 
-- The web scraping uses the correct Titanic website structure at `https://osu.titanic.sh/download/`
-- Currently finds 76+ available versions from 2008-2015
-- Uses scraped download URLs from `https://cdn.titanic.sh/clients/` for maximum reliability
-- Multiple download URL patterns are attempted as fallbacks
+- The launcher uses the official Titanic API for reliable version fetching
+- Currently supports official Titanic clients from 2008-2015 era
+- Downloads from official CDN URLs with automatic fallbacks
+- Multiple download URL patterns are attempted for reliability
 - The launcher creates a dedicated directory for each version to prevent conflicts
 - Requires `osu-wine` to be properly configured for optimal performance
+- Both sidebar and main content areas support mouse wheel scrolling
+- Built-in console provides detailed logging for debugging
 
 ## Troubleshooting
 
@@ -164,7 +169,7 @@ osu-wine --wine '/path/to/osu!.exe' [custom-arguments]
 
 **Download failures**:
 - Check internet connection
-- Verify Titanic website accessibility: `curl https://osu.titanic.sh/download/`
+- Verify Titanic API accessibility: `curl https://api.titanic.sh/releases`
 - Check available disk space in `~/.titaniclauncher/`
 - Try refreshing versions: Click "🔄 Refresh Versions"
 
@@ -184,12 +189,17 @@ osu-wine --wine '/path/to/osu!.exe' [custom-arguments]
 - Delete this file to reset all settings
 - Backup this file to preserve custom configurations
 
+**Scrolling issues**:
+- Use mouse wheel to scroll through both sidebar and main content
+- On Linux, both scroll wheel buttons (Button-4/Button-5) are supported
+- If scrolling doesn't work, try clicking in the area first to focus it
+
 ### Debug Information
 
-The launcher provides detailed error messages for debugging. Check the terminal output for specific error details if issues occur.
+The launcher provides detailed console output for debugging. Check the built-in console or terminal output for specific error details if issues occur.
 
 ### Getting Help
 
 - **GitHub Repository**: https://github.com/SuperYosh23/Iceberg
 - **Issue Reporting**: File issues on GitHub with error details
-- **Logs**: Check terminal output for detailed error information
+- **Console Logs**: Check the built-in console for detailed error information
