@@ -38,7 +38,6 @@ class TitanicLauncher(ctk.CTk):
         
         # Variables
         self.versions = []
-        self.modified_versions = []  # Store modified clients separately
         self.download_links = {}
         self.version_descriptions = {}
         self.version_images = {}
@@ -47,7 +46,6 @@ class TitanicLauncher(ctk.CTk):
         self.download_progress = ctk.DoubleVar()
         self.status_text = ctk.StringVar(value="Ready")
         self.current_version_name = None
-        self.current_tab = "official"  # Track current tab
         
         # Options variables
         self.appearance_mode = ctk.StringVar(value="dark")
@@ -124,28 +122,13 @@ class TitanicLauncher(ctk.CTk):
         self.auth_btn.pack(fill="x", padx=10, pady=(0, 10))
 
         # Version list with scroll wheel support
-        self.version_tabs = ctk.CTkTabview(self.sidebar_frame, width=220)
-        self.version_tabs.grid(row=2, column=0, padx=15, pady=10, sticky="nsew")
+        self.scrollable_list = ctk.CTkScrollableFrame(self.sidebar_frame, label_text="Installed Versions")
+        self.scrollable_list.grid(row=2, column=0, padx=15, pady=10, sticky="nsew")
         
-        # Create tabs for official and modified clients
-        self.official_tab = self.version_tabs.add("Official")
-        self.modified_tab = self.version_tabs.add("Modified")
-        
-        # Create scrollable frames for each tab
-        self.official_scrollable = ctk.CTkScrollableFrame(self.official_tab, label_text="Installed Versions")
-        self.official_scrollable.pack(fill="both", expand=True, padx=5, pady=5)
-        
-        self.modified_scrollable = ctk.CTkScrollableFrame(self.modified_tab, label_text="Installed Versions")
-        self.modified_scrollable.pack(fill="both", expand=True, padx=5, pady=5)
-        
-        # Enable scroll wheel support for both scrollable frames
-        for scrollable in [self.official_scrollable, self.modified_scrollable]:
-            scrollable.bind("<MouseWheel>", self._on_mousewheel)
-            scrollable.bind("<Button-4>", self._on_mousewheel)  # Linux scroll up
-            scrollable.bind("<Button-5>", self._on_mousewheel)  # Linux scroll down
-        
-        # Set up tab change callback
-        self.version_tabs.configure(command=self.on_tab_changed)
+        # Enable scroll wheel support
+        self.scrollable_list.bind("<MouseWheel>", self._on_mousewheel)
+        self.scrollable_list.bind("<Button-4>", self._on_mousewheel)  # Linux scroll up
+        self.scrollable_list.bind("<Button-5>", self._on_mousewheel)  # Linux scroll down
 
         # Action buttons
         self.download_clients_btn = ctk.CTkButton(self.sidebar_frame, text="📥 Download Clients", command=self.open_download_dialog, fg_color="#1bd964", hover_color="#15a34a", text_color="black")
@@ -167,9 +150,17 @@ class TitanicLauncher(ctk.CTk):
         self.header_label = ctk.CTkLabel(self.main_frame, text="Select a Version", font=ctk.CTkFont(size=32, weight="bold"))
         self.header_label.pack(pady=(10, 20))
 
-        # Single column layout for installed versions
-        self.content_frame = ctk.CTkFrame(self.main_frame)
-        self.content_frame.pack(fill="both", expand=True, padx=20, pady=10)
+        # Single column layout for installed versions with scrolling
+        self.main_scrollable = ctk.CTkScrollableFrame(self.main_frame)
+        self.main_scrollable.pack(fill="both", expand=True, padx=20, pady=10)
+        
+        # Enable scroll wheel support for main area
+        self.main_scrollable.bind("<MouseWheel>", self._on_mousewheel)
+        self.main_scrollable.bind("<Button-4>", self._on_mousewheel)  # Linux scroll up
+        self.main_scrollable.bind("<Button-5>", self._on_mousewheel)  # Linux scroll down
+        
+        self.content_frame = ctk.CTkFrame(self.main_scrollable)
+        self.content_frame.pack(fill="both", expand=True, padx=10, pady=10)
         
         # Version details section (collapsible)
         self.details_frame = ctk.CTkFrame(self.content_frame)
@@ -316,6 +307,10 @@ class TitanicLauncher(ctk.CTk):
         
         # Track console collapse state
         self.console_collapsed = False
+        
+        # Track collapse states
+        self.details_collapsed = False
+        self.settings_collapsed = False
 
         # Progress section (move to main frame)
         ctk.CTkLabel(self.main_frame, text="Download Progress").pack(anchor="w", padx=20, pady=(10, 0))
@@ -393,49 +388,19 @@ class TitanicLauncher(ctk.CTk):
                 version_descriptions[version] = description
                 version_images[version] = image_url
             
-            # Fetch modified clients
-            modified_versions = []
-            try:
-                self.log_to_console("Fetching modified clients...")
-                mod_response = requests.get("https://api.titanic.sh/releases/modded", timeout=10)
-                mod_response.raise_for_status()
-                mod_data = mod_response.json()
-                
-                for mod_client in mod_data:
-                    client_name = mod_client.get('name', 'Unknown Client')
-                    client_id = mod_client.get('id', 'unknown')
-                    
-                    # Create a unique identifier for modified clients
-                    mod_version = f"mod_{client_id}_{client_name.lower().replace(' ', '_')}"
-                    
-                    modified_versions.append(mod_version)
-                    version_descriptions[mod_version] = f"Modified Client: {client_name}"
-                    version_images[mod_version] = None  # Modified clients might not have screenshots
-                    
-                    # Store additional info for modified clients
-                    download_links[mod_version] = f"https://api.titanic.sh/releases/modded/{client_id}/entries"
-                
-                self.log_to_console(f"Successfully fetched {len(modified_versions)} modified clients")
-                    
-            except Exception as e:
-                self.log_to_console(f"Failed to fetch modified clients: {e}", "WARNING")
-                modified_versions = []
-            
             # Sort versions from newest to oldest using the existing version_key method
             versions.sort(key=TitanicLauncher.version_key, reverse=True)
             
             # Store data for later use
             self.versions = versions
-            self.modified_versions = modified_versions
             self.download_links = download_links
             self.version_descriptions = version_descriptions
             self.version_images = version_images
             
             # Update UI in main thread
-            current_versions = self.modified_versions if self.current_tab == "modified" else self.versions
-            self.after(0, self._update_versions_ui, current_versions)
-            self.after(0, lambda: self.status_text.set(f"Loaded {len(versions)} official and {len(modified_versions)} modified clients from Titanic API"))
-            self.log_to_console(f"Successfully loaded {len(versions)} official and {len(modified_versions)} modified clients", "SUCCESS")
+            self.after(0, self._update_versions_ui)
+            self.after(0, lambda: self.status_text.set(f"Loaded {len(versions)} versions from Titanic API"))
+            self.log_to_console(f"Successfully loaded {len(versions)} versions", "SUCCESS")
             
         except Exception as e:
             # Fallback to known versions on error
@@ -445,19 +410,19 @@ class TitanicLauncher(ctk.CTk):
             self.version_descriptions = {v: "Fallback version" for v in fallback_versions}
             self.version_images = {}
             self.versions = fallback_versions
-            self.modified_versions = []
-            self.after(0, self._update_versions_ui, fallback_versions)
+            self.after(0, self._update_versions_ui)
             self.after(0, lambda: self.status_text.set(f"Using fallback versions (API error: {str(e)})"))
             self.log_to_console("Using fallback versions due to API error", "WARNING")
 
-    def _update_versions_ui(self, versions):
-        """Update UI with fetched versions"""
-        self.versions = versions
-        if versions:
-            self.selected_version.set(versions[0])
+    def _update_versions_ui(self):
+        """Update UI with fetched versions - this method should not overwrite the version lists"""
+        # Don't overwrite self.versions or self.modified_versions here
+        # They should only be set in the _fetch_versions_thread method
         
-        self.status_text.set(f"Found {len(versions)} versions")
+        # Just refresh the version buttons to show current state
         self.refresh_version_buttons()
+        
+        self.status_text.set("Versions loaded")
     
     @staticmethod
     def version_key(v):
@@ -473,42 +438,30 @@ class TitanicLauncher(ctk.CTk):
             return (int(year), int(month), int(day), build_num)
         return (0, 0, 0, 0)
 
-    def on_tab_changed(self):
-        """Handle tab change between official and modified clients"""
-        selected_tab = self.version_tabs.get()
-        self.current_tab = selected_tab.lower()
-        
-        # Refresh version buttons for both tabs to ensure they're up to date
-        self.refresh_version_buttons()
-        
-        self.log_to_console(f"Switched to {self.current_tab} clients")
-        self.status_text.set(f"Showing {self.current_tab} clients")
-
     def refresh_version_buttons(self):
         """Refresh the version buttons in the sidebar - show only installed versions"""
-        # Clear existing buttons from both tabs
-        for widget in self.official_scrollable.winfo_children():
-            widget.destroy()
-        for widget in self.modified_scrollable.winfo_children():
+        # Clear existing buttons
+        for widget in self.scrollable_list.winfo_children():
             widget.destroy()
         
-        self.official_scrollable.grid_columnconfigure(0, weight=1)
-        self.modified_scrollable.grid_columnconfigure(0, weight=1)
+        self.scrollable_list.grid_columnconfigure(0, weight=1)
         
-        # Handle official versions tab
-        official_installed = []
+        # Only show installed versions in sidebar
+        installed_versions = []
         for version in self.versions:
             version_path = os.path.join(self.versions_dir, version)
             if os.path.exists(version_path) and os.path.exists(os.path.join(version_path, "osu!.exe")):
-                official_installed.append(version)
+                installed_versions.append(version)
         
-        # Add buttons for installed official versions
-        for i, version in enumerate(official_installed):
+        # Add buttons for installed versions only
+        for i, version in enumerate(installed_versions):
+            # Get custom name
             config = self.get_version_config(version)
             display_name = config['custom_name']
             
+            # Create button for installed version - normal styling
             btn = ctk.CTkButton(
-                self.official_scrollable,
+                self.scrollable_list,
                 text=display_name,
                 fg_color="transparent",
                 border_width=1,
@@ -519,45 +472,11 @@ class TitanicLauncher(ctk.CTk):
             btn.grid(row=i, column=0, sticky="ew", pady=2)
             btn.configure(text_color=("gray10", "gray90"))
         
-        # Show message if no official versions installed
-        if not official_installed:
+        # If no versions installed, show message
+        if not installed_versions:
             no_versions_label = ctk.CTkLabel(
-                self.official_scrollable,
-                text="No official versions installed\nClick 'Download Clients' to get started",
-                font=ctk.CTkFont(size=12),
-                text_color="gray"
-            )
-            no_versions_label.grid(row=0, column=0, pady=20)
-        
-        # Handle modified versions tab
-        modified_installed = []
-        for version in self.modified_versions:
-            version_path = os.path.join(self.versions_dir, version)
-            if os.path.exists(version_path) and os.path.exists(os.path.join(version_path, "osu!.exe")):
-                modified_installed.append(version)
-        
-        # Add buttons for installed modified versions
-        for i, version in enumerate(modified_installed):
-            config = self.get_version_config(version)
-            display_name = config['custom_name']
-            
-            btn = ctk.CTkButton(
-                self.modified_scrollable,
-                text=display_name,
-                fg_color="transparent",
-                border_width=1,
-                anchor="w",
-                height=40,
-                command=lambda v=version: self.select_version(v)
-            )
-            btn.grid(row=i, column=0, sticky="ew", pady=2)
-            btn.configure(text_color=("gray10", "gray90"))
-        
-        # Show message if no modified versions installed
-        if not modified_installed:
-            no_versions_label = ctk.CTkLabel(
-                self.modified_scrollable,
-                text="No modified versions installed\nClick 'Download Clients' to get started",
+                self.scrollable_list,
+                text="No versions installed\nClick 'Download Clients' to get started",
                 font=ctk.CTkFont(size=12),
                 text_color="gray"
             )
@@ -762,8 +681,8 @@ class TitanicLauncher(ctk.CTk):
                     self.log_to_console(f"API URL failed: {e}", "WARNING")
                     download_url = None
             
-            # If scraped URL failed, try fallback patterns
-            if not download_url or not response or response.status_code != 200:
+            # If API URL failed, try fallback patterns
+            if not response or response.status_code != 200:
                 self.log_to_console("Trying fallback download URLs...")
                 possible_urls = [
                     f"https://cdn.titanic.sh/clients/{version}.zip",
@@ -786,7 +705,7 @@ class TitanicLauncher(ctk.CTk):
                         self.log_to_console(f"URL failed: {url} - {e}", "WARNING")
                         continue
             
-            if not download_url or not response or response.status_code != 200:
+            if not response or response.status_code != 200:
                 raise Exception("Could not find valid download URL")
             
             # Download path
@@ -833,7 +752,6 @@ class TitanicLauncher(ctk.CTk):
             # Extract archive
             with zipfile.ZipFile(download_path, 'r') as zip_ref:
                 zip_ref.extractall(extract_path)
-            
             self.log_to_console("Extraction completed successfully", "SUCCESS")
             
             # Clean up zip file
@@ -843,8 +761,10 @@ class TitanicLauncher(ctk.CTk):
             self.status_text.set(f"Successfully installed {version}")
             self.log_to_console(f"Successfully installed {version}", "SUCCESS")
             self.download_progress.set(100)
-            self.refresh_version_buttons()
-            self.select_version(version)  # Update the display and button
+            
+            # Refresh UI with a delay to avoid canvas errors
+            self.after(1000, lambda: self.refresh_version_buttons())
+            self.after(1000, lambda: self.select_version(version))  # Update the display and button
             
         except Exception as e:
             error_msg = f"Failed to download {version}: {str(e)}"
@@ -1008,8 +928,7 @@ class TitanicLauncher(ctk.CTk):
         main_frame.pack(fill="both", expand=True, padx=20, pady=20)
         
         # Title
-        client_type = "Modified" if self.current_tab == "modified" else "Official"
-        ctk.CTkLabel(main_frame, text=f"Available {client_type} Clients", font=ctk.CTkFont(size=24, weight="bold")).pack(pady=(10, 20))
+        ctk.CTkLabel(main_frame, text="Available Clients", font=ctk.CTkFont(size=24, weight="bold")).pack(pady=(10, 20))
         
         # Scrollable frame for client list
         scrollable_frame = ctk.CTkScrollableFrame(main_frame, height=400)
@@ -1020,8 +939,7 @@ class TitanicLauncher(ctk.CTk):
         
         # Add available clients (not installed)
         row = 0
-        current_versions = self.modified_versions if self.current_tab == "modified" else self.versions
-        for version in current_versions:
+        for version in self.versions:
             version_path = os.path.join(self.versions_dir, version)
             if not (os.path.exists(version_path) and os.path.exists(os.path.join(version_path, "osu!.exe"))):
                 # Get version info
