@@ -769,8 +769,19 @@ class TitanicLauncher(ctk.CTk):
             self.status_text.set(f"Failed to download {version}")
             self.download_progress.set(0)
 
+    def is_windows(self):
+        """Check if running on Windows (with test mode override)"""
+        # Check for test mode environment variable
+        if os.environ.get("FORCE_WINDOWS_MODE", "false").lower() == "true":
+            self.log_to_console("🧪 TEST MODE: Simulating Windows detection", "WARNING")
+            return True
+        
+        is_win = sys.platform == "win32"
+        self.log_to_console(f"Platform detection: {sys.platform} -> {'Windows' if is_win else 'Linux'}")
+        return is_win
+
     def launch_game(self):
-        """Launch selected Titanic version using osu-wine with custom arguments"""
+        """Launch selected Titanic version using osu-wine with custom arguments (Linux) or directly (Windows)"""
         version = self.selected_version.get()
         if not version:
             messagebox.showerror("Error", "Please select a version to launch")
@@ -797,68 +808,124 @@ class TitanicLauncher(ctk.CTk):
             self.launch_btn.configure(state="disabled", text="Launching...")
             self.update()
             
-            # Find osu-wine executable path
-            osuwine_cmd = self.find_osuwine_executable()
-            if not osuwine_cmd:
-                error_msg = ("osu-wine not found!\n\n"
-                           "Please install osu-wine first:\n"
-                           "1. Go to Options → Download osu-wine\n"
-                           "2. Or install manually from https://github.com/NelloKudo/osu-winello")
-                self.log_to_console("osu-wine not found", "ERROR")
-                messagebox.showerror("Error", error_msg)
-                return
-            
-            # Build command with custom arguments
-            cmd = [osuwine_cmd, "--wine", osu_exe]
-            
-            # Add launch arguments if specified
-            if config['launch_args']:
-                launch_args = config['launch_args'].split()
-                cmd.extend(launch_args)
-                self.log_to_console(f"Using launch arguments: {config['launch_args']}")
-            
-            command_str = ' '.join(cmd)
-            self.log_to_console(f"Executing: {command_str}")
-            print(f"Launching with command: {command_str}")
-            
-            # Launch with output capture
-            try:
-                process = subprocess.Popen(
-                    cmd, 
-                    cwd=version_path,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    text=True,
-                    bufsize=1,
-                    universal_newlines=True
-                )
+            # Check if running on Windows
+            if self.is_windows():
+                # Windows: Launch directly without wine
+                cmd = [osu_exe]
                 
-                # Start a thread to read output and send to console
-                def read_output():
-                    try:
-                        for line in iter(process.stdout.readline, ''):
-                            if line:
-                                # Remove trailing whitespace and log to console
-                                clean_line = line.rstrip()
-                                if clean_line:  # Only log non-empty lines
-                                    self.log_to_console(f"[GAME] {clean_line}")
-                        
-                        # Wait for process to complete
-                        process.wait()
-                        self.log_to_console(f"[GAME] Process exited with code: {process.returncode}")
-                        
-                    except Exception as e:
-                        self.log_to_console(f"[GAME] Error reading output: {e}", "ERROR")
+                # Add launch arguments if specified
+                if config['launch_args']:
+                    launch_args = config['launch_args'].split()
+                    cmd.extend(launch_args)
+                    self.log_to_console(f"Using launch arguments: {config['launch_args']}")
                 
-                # Start output reader thread
-                output_thread = threading.Thread(target=read_output, daemon=True)
-                output_thread.start()
+                command_str = ' '.join(cmd)
+                self.log_to_console(f"Executing on Windows: {command_str}")
+                print(f"Launching on Windows with command: {command_str}")
                 
-                self.log_to_console(f"Successfully launched {display_name} (PID: {process.pid})", "SUCCESS")
+                # Launch with output capture
+                try:
+                    process = subprocess.Popen(
+                        cmd, 
+                        cwd=version_path,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                        text=True,
+                        bufsize=1,
+                        universal_newlines=True
+                    )
+                    
+                    # Start a thread to read output and send to console
+                    def read_output():
+                        try:
+                            for line in iter(process.stdout.readline, ''):
+                                if line:
+                                    # Remove trailing whitespace and log to console
+                                    clean_line = line.rstrip()
+                                    if clean_line:  # Only log non-empty lines
+                                        self.log_to_console(f"[GAME] {clean_line}")
+                            
+                            # Wait for process to complete
+                            process.wait()
+                            self.log_to_console(f"[GAME] Process exited with code: {process.returncode}")
+                            
+                        except Exception as e:
+                            self.log_to_console(f"[GAME] Error reading output: {e}", "ERROR")
+                    
+                    # Start output reader thread
+                    output_thread = threading.Thread(target=read_output, daemon=True)
+                    output_thread.start()
+                    
+                    self.log_to_console(f"Successfully launched {display_name} on Windows (PID: {process.pid})", "SUCCESS")
+                    
+                except Exception as e:
+                    self.log_to_console(f"Failed to start process: {e}", "ERROR")
+                    raise e
+            else:
+                # Linux: Use osu-wine
+                # Find osu-wine executable path
+                osuwine_cmd = self.find_osuwine_executable()
+                if not osuwine_cmd:
+                    error_msg = ("osu-wine not found!\n\n"
+                               "Please install osu-wine first:\n"
+                               "1. Go to Options → Download osu-wine\n"
+                               "2. Or install manually from https://github.com/NelloKudo/osu-winello\n\n"
+                               "Note: osu-wine is only needed on Linux systems.")
+                    self.log_to_console("osu-wine not found", "ERROR")
+                    messagebox.showerror("Error", error_msg)
+                    return
                 
-            except Exception as e:
-                self.log_to_console(f"Failed to start process: {e}", "ERROR")
-                raise e
+                # Build command with custom arguments
+                cmd = [osuwine_cmd, "--wine", osu_exe]
+                
+                # Add launch arguments if specified
+                if config['launch_args']:
+                    launch_args = config['launch_args'].split()
+                    cmd.extend(launch_args)
+                    self.log_to_console(f"Using launch arguments: {config['launch_args']}")
+                
+                command_str = ' '.join(cmd)
+                self.log_to_console(f"Executing: {command_str}")
+                print(f"Launching with command: {command_str}")
+                
+                # Launch with output capture
+                try:
+                    process = subprocess.Popen(
+                        cmd, 
+                        cwd=version_path,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                        text=True,
+                        bufsize=1,
+                        universal_newlines=True
+                    )
+                    
+                    # Start a thread to read output and send to console
+                    def read_output():
+                        try:
+                            for line in iter(process.stdout.readline, ''):
+                                if line:
+                                    # Remove trailing whitespace and log to console
+                                    clean_line = line.rstrip()
+                                    if clean_line:  # Only log non-empty lines
+                                        self.log_to_console(f"[GAME] {clean_line}")
+                            
+                            # Wait for process to complete
+                            process.wait()
+                            self.log_to_console(f"[GAME] Process exited with code: {process.returncode}")
+                            
+                        except Exception as e:
+                            self.log_to_console(f"[GAME] Error reading output: {e}", "ERROR")
+                    
+                    # Start output reader thread
+                    output_thread = threading.Thread(target=read_output, daemon=True)
+                    output_thread.start()
+                    
+                    self.log_to_console(f"Successfully launched {display_name} (PID: {process.pid})", "SUCCESS")
+                    
+                except Exception as e:
+                    self.log_to_console(f"Failed to start process: {e}", "ERROR")
+                    raise e
             
             self.status_text.set(f"Launched {display_name}")
             self.log_to_console(f"Successfully launched {display_name}", "SUCCESS")
@@ -1270,28 +1337,37 @@ class TitanicLauncher(ctk.CTk):
         )
         auth_btn.pack(fill="x", padx=10, pady=5)
         
-        # osu-wine download button
-        self.osuwine_btn = ctk.CTkButton(
-            tools_frame,
-            text="📥 Download osu-wine",
-            fg_color="#ff6b35",
-            hover_color="#e55a2b",
-            command=self.download_osuwine_placeholder
-        )
-        self.osuwine_btn.pack(fill="x", padx=10, pady=5)
-        
-        # Update button state based on installation status
-        self.update_osuwine_button_state()
+        # osu-wine download button (only show on Linux)
+        if not self.is_windows():
+            self.osuwine_btn = ctk.CTkButton(
+                tools_frame,
+                text="📥 Download osu-wine",
+                fg_color="#ff6b35",
+                hover_color="#e55a2b",
+                command=self.download_osuwine_placeholder
+            )
+            self.osuwine_btn.pack(fill="x", padx=10, pady=5)
+            
+            # Update button state based on installation status
+            self.update_osuwine_button_state()
         
         # Help text
         help_text = ctk.CTkTextbox(main_frame, height=80, font=ctk.CTkFont(size=10))
         help_text.pack(fill="x", pady=(0, 20))
-        help_text.insert("0.0", 
-            "Theme: Switch between dark and light modes\n"
-            "Accent Color: Change the primary color theme\n"
-            "Login/Logout: Sign in or out of your Titanic account\n"
-            "osu-wine: Download the osu-wine launcher for running Titanic clients"
-        )
+        
+        # Different help text for Windows vs Linux
+        if self.is_windows():
+            help_content = ("Theme: Switch between dark and light modes\n"
+                          "Accent Color: Change the primary color theme\n"
+                          "Login/Logout: Sign in or out of your Titanic account\n"
+                          "Windows detected: Games will launch directly without wine")
+        else:
+            help_content = ("Theme: Switch between dark and light modes\n"
+                          "Accent Color: Change the primary color theme\n"
+                          "Login/Logout: Sign in or out of your Titanic account\n"
+                          "osu-wine: Download the osu-wine launcher for running Titanic clients")
+        
+        help_text.insert("0.0", help_content)
         help_text.configure(state="disabled")
         
         # Close button
@@ -1548,7 +1624,7 @@ echo "export PATH=\"$PATH:{user_bin}\""
 
     def update_osuwine_button_state(self):
         """Update osu-wine button state based on installation status"""
-        if hasattr(self, 'osuwine_btn'):
+        if hasattr(self, 'osuwine_btn') and self.osuwine_btn:
             if self.check_osuwine_installed():
                 self.osuwine_btn.configure(
                     text="✓ osu-wine Installed",
@@ -1592,7 +1668,7 @@ echo "export PATH=\"$PATH:{user_bin}\""
             print(f"Failed to save options config: {e}")
 
     def load_auth_config(self):
-        """Load authentication configuration"""
+        """Load authentication configuration and refresh user stats"""
         try:
             if os.path.exists(self.config_file):
                 with open(self.config_file, 'r') as f:
@@ -1601,16 +1677,41 @@ echo "export PATH=\"$PATH:{user_bin}\""
                 if 'auth' in config:
                     self.auth_token = config['auth'].get('token')
                     self.user_data = config['auth'].get('user_data', {})
+                    
+                    # Update display with cached data first
                     self.update_user_display()
                     
-                    # Fetch avatar on startup
-                    if self.auth_token and self.user_data:
-                        user_id = self.user_data.get('id', 0)
-                        if user_id and user_id != 0:
-                            print(f"Fetching avatar on startup for user {user_id}")
-                            self.fetch_user_avatar(user_id)
+                    # Refresh user data from API in background
+                    if self.auth_token:
+                        print("Refreshing user stats on startup...")
+                        self.log_to_console("Refreshing user stats...", "INFO")
+                        
+                        # Start refresh in background thread to avoid blocking UI
+                        thread = threading.Thread(target=self._refresh_user_data_thread)
+                        thread.daemon = True
+                        thread.start()
         except Exception as e:
             print(f"Failed to load auth config: {e}")
+            self.log_to_console(f"Failed to load auth config: {e}", "ERROR")
+
+    def _refresh_user_data_thread(self):
+        """Refresh user data in background thread"""
+        try:
+            # Fetch fresh data from API
+            self.fetch_user_data()
+            
+            # Update UI in main thread
+            self.after(0, lambda: self.update_user_display())
+            self.after(0, lambda: self.save_options_config())
+            
+            if self.user_data.get('username'):
+                self.log_to_console(f"User stats refreshed for {self.user_data['username']}", "SUCCESS")
+            else:
+                self.log_to_console("User stats refresh completed", "SUCCESS")
+                
+        except Exception as e:
+            self.log_to_console(f"Failed to refresh user stats: {e}", "ERROR")
+            print(f"Failed to refresh user data: {e}")
 
     def open_login_dialog(self):
         """Open login dialog"""
