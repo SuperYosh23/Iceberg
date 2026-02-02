@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Iceberg Launcher</title>
-    <meta name="description" content="A modern, feature-rich GUI launcher for Titanic osu! versions on Linux. Automatically fetches, downloads, and manages different game versions with a polished user interface.">
-    <meta name="keywords" content="osu, titanic, launcher, linux, game manager, osu-wine">
+    <meta name="description" content="A modern, feature-rich GUI launcher for Titanic osu! versions on Linux and Windows. Automatically fetches, downloads, and manages different game versions with a polished user interface and cross-platform support.">
+    <meta name="keywords" content="osu, titanic, launcher, linux, windows, cross-platform, game manager, osu-wine">
     <link rel="icon" type="image/png" href="logo.png">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
@@ -507,7 +507,7 @@
             </div>
         </div>
         <h1>Iceberg Launcher</h1>
-        <p>The modern, feature-rich GUI launcher for Titanic osu! versions on Linux. Automatically fetches, downloads, and manages different game versions with a polished user interface.</p>
+        <p>The modern, feature-rich GUI launcher for Titanic osu! versions on Linux and Windows. Automatically fetches, downloads, and manages different game versions with a polished user interface and cross-platform support.</p>
         <div class="cta-buttons">
             <a href="#installation" class="btn btn-primary">
                 <i class="fas fa-download"></i>
@@ -530,6 +530,14 @@
         <div class="features-grid">
             <div class="feature-card">
                 <div class="feature-icon">
+                    <i class="fas fa-windows"></i>
+                </div>
+                <h3 class="feature-title">Cross-Platform Support</h3>
+                <p class="feature-description">Automatic Windows detection with native game launching on Windows and osu-wine integration on Linux. One launcher, all platforms.</p>
+            </div>
+
+            <div class="feature-card">
+                <div class="feature-icon">
                     <i class="fas fa-rocket"></i>
                 </div>
                 <h3 class="feature-title">API-Based Version Fetching</h3>
@@ -549,7 +557,7 @@
                     <i class="fas fa-gamepad"></i>
                 </div>
                 <h3 class="feature-title">Real-time Game Output</h3>
-                <p class="feature-description">Capture and display wine/game output in real-time directly in the launcher console for easy debugging.</p>
+                <p class="feature-description">Capture and display game output in real-time directly in the launcher console for easy debugging.</p>
             </div>
 
             <div class="feature-card">
@@ -558,6 +566,14 @@
                 </div>
                 <h3 class="feature-title">Modern UI/UX</h3>
                 <p class="feature-description">Beautiful CustomTkinter interface with dark/light themes, customizable accent colors, and smooth animations.</p>
+            </div>
+
+            <div class="feature-card">
+                <div class="feature-icon">
+                    <i class="fas fa-sync"></i>
+                </div>
+                <h3 class="feature-title">Auto-Refresh Stats</h3>
+                <p class="feature-description">User statistics automatically refresh every time the launcher opens, ensuring you always see the latest data.</p>
             </div>
 
             <div class="feature-card">
@@ -633,7 +649,7 @@
         <div style="background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 15px; padding: 2rem; margin-bottom: 2rem; text-align: center;">
             <h3 style="color: var(--light-text); margin-bottom: 1rem;">🚀 Quick Start - Binary Download</h3>
             <p style="color: var(--gray-text); margin-bottom: 1.5rem;">
-                You can download a premade x86-64 binary from <a href="https://github.com/SuperYosh23/Iceberg/releases" target="_blank" style="color: var(--primary-color); font-weight: bold;">GitHub Releases</a>. 
+                You can download premade binaries for both Linux and Windows from <a href="https://github.com/SuperYosh23/Iceberg/releases" target="_blank" style="color: var(--primary-color); font-weight: bold;">GitHub Releases</a>. 
                 If your system doesn't support that, or if you want the latest cutting edge version of the launcher, follow the instructions below.
             </p>
             <a href="https://github.com/SuperYosh23/Iceberg/releases" target="_blank" class="btn btn-primary">
@@ -641,8 +657,14 @@
                 Download Binary
             </a>
         </div>
-        
-        <div class="install-steps">
+
+        <!-- Linux Installation -->
+        <div class="install-steps" style="margin-bottom: 2rem;">
+            <h3 style="color: var(--light-text); margin-bottom: 1.5rem; text-align: center;">
+                <i class="fab fa-linux" style="color: var(--primary-color); margin-right: 0.5rem;"></i>
+                Linux Installation
+            </h3>
+            
             <div class="step">
                 <div class="step-number">1</div>
                 <div class="step-content">
@@ -667,20 +689,91 @@ cd Iceberg</div>
                     <div class="code-block">python main.py</div>
                 </div>
             </div>
+
+            <div class="step">
+                <div class="step-number">4</div>
+                <div class="step-content">
+                    <div class="step-title">Build Binary (Optional)</div>
+                    <div class="code-block">./build.sh</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Windows Installation -->
+        <div class="install-steps" style="margin-bottom: 2rem;">
+            <h3 style="color: var(--light-text); margin-bottom: 1.5rem; text-align: center;">
+                <i class="fab fa-windows" style="color: var(--primary-color); margin-right: 0.5rem;"></i>
+                Windows Installation
+            </h3>
+            
+            <div class="step">
+                <div class="step-number">1</div>
+                <div class="step-content">
+                    <div class="step-title">Clone the Repository</div>
+                    <div class="code-block">git clone https://github.com/SuperYosh23/Iceberg.git
+cd Iceberg</div>
+                </div>
+            </div>
+
+            <div class="step">
+                <div class="step-number">2</div>
+                <div class="step-content">
+                    <div class="step-title">Install Dependencies</div>
+                    <div class="code-block">pip install -r requirements.txt</div>
+                </div>
+            </div>
+
+            <div class="step">
+                <div class="step-number">3</div>
+                <div class="step-content">
+                    <div class="step-title">Run the Launcher</div>
+                    <div class="code-block">python main.py</div>
+                </div>
+            </div>
+
+            <div class="step">
+                <div class="step-number">4</div>
+                <div class="step-content">
+                    <div class="step-title">Build Binary (Optional)</div>
+                    <div class="code-block">pyinstaller IcebergLauncher_windows.spec</div>
+                </div>
+            </div>
         </div>
         
         <div class="requirements">
             <h3>System Requirements</h3>
-            <ul>
-                <li>Python 3.6 or higher</li>
-                <li>Linux operating system</li>
-                <li>requests>=2.25.1</li>
-                <li>customtkinter>=5.0.0</li>
-                <li>beautifulsoup4>=4.9.0</li>
-                <li>Pillow>=8.0.0</li>
-                <li>osu-wine (for running Titanic clients)</li>
-                <li>Git (for osu-wine auto-installation)</li>
-            </ul>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 2rem;">
+                <div>
+                    <h4 style="color: var(--primary-color); margin-bottom: 1rem;">
+                        <i class="fab fa-linux"></i> Linux Requirements
+                    </h4>
+                    <ul>
+                        <li>Python 3.6 or higher</li>
+                        <li>Linux operating system</li>
+                        <li>requests>=2.25.1</li>
+                        <li>customtkinter>=5.0.0</li>
+                        <li>beautifulsoup4>=4.9.0</li>
+                        <li>Pillow>=8.0.0</li>
+                        <li>osu-wine (for running Titanic clients)</li>
+                        <li>Git (for osu-wine auto-installation)</li>
+                    </ul>
+                </div>
+                <div>
+                    <h4 style="color: var(--primary-color); margin-bottom: 1rem;">
+                        <i class="fab fa-windows"></i> Windows Requirements
+                    </h4>
+                    <ul>
+                        <li>Python 3.6 or higher</li>
+                        <li>Windows 10 or higher</li>
+                        <li>requests>=2.25.1</li>
+                        <li>customtkinter>=5.0.0</li>
+                        <li>beautifulsoup4>=4.9.0</li>
+                        <li>Pillow>=8.0.0</li>
+                        <li>No additional dependencies needed</li>
+                        <li>Native game launching (no wine required)</li>
+                    </ul>
+                </div>
+            </div>
         </div>
     </section>
 
