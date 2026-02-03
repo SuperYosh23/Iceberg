@@ -50,6 +50,11 @@ class TitanicLauncher(ctk.CTk):
         # Drag and drop variables
         self.version_buttons = {}  # Store references to version buttons
         
+        # Initialize collapse states before UI setup
+        self.details_collapsed = True
+        self.settings_collapsed = True
+        self.console_collapsed = True
+        
         # Options variables
         self.appearance_mode = ctk.StringVar(value="dark")
         self.accent_color = ctk.StringVar(value="blue")
@@ -172,7 +177,7 @@ class TitanicLauncher(ctk.CTk):
         
         self.details_toggle_btn = ctk.CTkButton(
             self.details_header_frame,
-            text="▼",
+            text="▶",
             width=30,
             fg_color="transparent",
             text_color=("gray10", "gray90"),
@@ -190,7 +195,7 @@ class TitanicLauncher(ctk.CTk):
         
         # Collapsible content for version details
         self.details_content_frame = ctk.CTkFrame(self.details_frame)
-        self.details_content_frame.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+        # Don't pack initially - start collapsed
         
         self.description_text = ctk.CTkTextbox(self.details_content_frame, height=200, font=ctk.CTkFont(size=12))
         self.description_text.pack(fill="both", expand=True, padx=10, pady=10)
@@ -208,7 +213,7 @@ class TitanicLauncher(ctk.CTk):
         
         self.settings_toggle_btn = ctk.CTkButton(
             self.settings_header_frame,
-            text="▼",
+            text="▶",
             width=30,
             fg_color="transparent",
             text_color=("gray10", "gray90"),
@@ -226,7 +231,7 @@ class TitanicLauncher(ctk.CTk):
         
         # Collapsible content for version settings
         self.settings_content_frame = ctk.CTkFrame(self.settings_frame)
-        self.settings_content_frame.pack(fill="x", padx=10, pady=(0, 10))
+        # Don't pack initially - start collapsed
         
         # Settings form
         self.settings_form = ctk.CTkFrame(self.settings_content_frame)
@@ -268,7 +273,7 @@ class TitanicLauncher(ctk.CTk):
         
         self.console_toggle_btn = ctk.CTkButton(
             self.console_header_frame,
-            text="▼",
+            text="▶",
             width=30,
             fg_color="transparent",
             text_color=("gray10", "gray90"),
@@ -296,20 +301,13 @@ class TitanicLauncher(ctk.CTk):
         
         # Collapsible content for console
         self.console_content_frame = ctk.CTkFrame(self.console_frame)
-        self.console_content_frame.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+        # Don't pack initially - start collapsed
         
         # Console text widget
         self.console_text = ctk.CTkTextbox(self.console_content_frame, height=150, font=ctk.CTkFont(family="Courier", size=10))
         self.console_text.pack(fill="both", expand=True, padx=10, pady=10)
         self.console_text.insert("0.0", "Console output will appear here...\n")
         self.console_text.configure(state="disabled")
-        
-        # Track console collapse state
-        self.console_collapsed = False
-        
-        # Track collapse states
-        self.details_collapsed = False
-        self.settings_collapsed = False
 
         # Progress section (move to main frame)
         ctk.CTkLabel(self.main_frame, text="Download Progress").pack(anchor="w", padx=20, pady=(10, 0))
@@ -417,6 +415,12 @@ class TitanicLauncher(ctk.CTk):
         """Update UI with fetched versions - this method should not overwrite the version lists"""
         # Don't overwrite self.versions or self.modified_versions here
         # They should only be set in the _fetch_versions_thread method
+        
+        # Add imported versions to the list
+        imported_versions = self.version_configs.get('_imported_versions', [])
+        for imported_version in imported_versions:
+            if imported_version not in self.versions:
+                self.versions.append(imported_version)
         
         # Just refresh the version buttons to show current state
         self.refresh_version_buttons()
@@ -1129,6 +1133,32 @@ class TitanicLauncher(ctk.CTk):
         # Title
         ctk.CTkLabel(main_frame, text="Available Clients", font=ctk.CTkFont(size=24, weight="bold")).pack(pady=(10, 20))
         
+        # Import section
+        import_frame = ctk.CTkFrame(main_frame)
+        import_frame.pack(fill="x", pady=(0, 20))
+        import_frame.grid_columnconfigure(1, weight=1)
+        
+        ctk.CTkLabel(import_frame, text="Import Client:", font=ctk.CTkFont(size=16, weight="bold")).grid(row=0, column=0, sticky="w", padx=10, pady=10)
+        
+        # Import buttons
+        import_zip_btn = ctk.CTkButton(
+            import_frame,
+            text="📁 Import from Zip/.iceclient",
+            fg_color="#ff6b35",
+            hover_color="#e55a2b",
+            command=self.import_from_zip
+        )
+        import_zip_btn.grid(row=0, column=1, sticky="e", padx=10, pady=10)
+        
+        import_folder_btn = ctk.CTkButton(
+            import_frame,
+            text="📂 Import from Folder",
+            fg_color="#17a2b8",
+            hover_color="#138496",
+            command=self.import_from_folder
+        )
+        import_folder_btn.grid(row=0, column=2, sticky="e", padx=10, pady=10)
+        
         # Scrollable frame for client list
         scrollable_frame = ctk.CTkScrollableFrame(main_frame, height=400)
         scrollable_frame.pack(fill="both", expand=True, pady=(0, 20))
@@ -1471,6 +1501,28 @@ class TitanicLauncher(ctk.CTk):
                 text_color="gray"
             )
             audio_help_label.pack(pady=(0, 5))
+            
+            # Run other program button (only show on Linux)
+            run_program_frame = ctk.CTkFrame(tools_frame)
+            run_program_frame.pack(fill="x", padx=10, pady=5)
+            
+            run_program_btn = ctk.CTkButton(
+                run_program_frame,
+                text="🚀 Run other program under wine-osu",
+                fg_color="#6f42c1",
+                hover_color="#5a32a3",
+                command=self.run_other_program
+            )
+            run_program_btn.pack(fill="x", pady=(0, 5))
+            
+            # Help message for run other program
+            run_help_label = ctk.CTkLabel(
+                run_program_frame,
+                text="Run .bat, .exe, or .scr files using osu-wine",
+                font=ctk.CTkFont(size=10),
+                text_color="gray"
+            )
+            run_help_label.pack(pady=(0, 5))
         
         # Help text
         help_text = ctk.CTkTextbox(main_frame, height=80, font=ctk.CTkFont(size=10))
@@ -1487,7 +1539,8 @@ class TitanicLauncher(ctk.CTk):
                           "Accent Color: Change the primary color theme\n"
                           "Login/Logout: Sign in or out of your Titanic account\n"
                           "osu-wine: Download the osu-wine launcher for running Titanic clients\n"
-                          "Audio Fix: Fix audio issues and score submission problems")
+                          "Audio Fix: Fix audio issues and score submission problems\n"
+                          "Run Program: Execute .bat, .exe, or .scr files using osu-wine")
         
         help_text.insert("0.0", help_content)
         help_text.configure(state="disabled")
@@ -1663,6 +1716,98 @@ class TitanicLauncher(ctk.CTk):
         self.status_text.set("Audio fix error")
         messagebox.showerror("Error", 
             f"An error occurred while running the audio fix:\n\n"
+            f"{error_msg}")
+
+    def run_other_program(self):
+        """Run a selected program using osu-wine"""
+        try:
+            # Check if osu-wine is available
+            if not self.check_osuwine_installed():
+                messagebox.showerror("osu-wine Not Found", 
+                    "osu-wine is not installed or not found in PATH.\n\n"
+                    "Please install osu-wine first using the 'Download osu-wine' button.")
+                return
+            
+            # Ask user to select a file
+            file_path = filedialog.askopenfilename(
+                title="Select Program to Run",
+                filetypes=[
+                    ("Executable files", "*.exe *.bat *.scr"),
+                    ("Windows Executable", "*.exe"),
+                    ("Batch Files", "*.bat"),
+                    ("Screen Savers", "*.scr"),
+                    ("All files", "*.*")
+                ]
+            )
+            
+            if not file_path:
+                return
+            
+            # Ask for confirmation
+            filename = os.path.basename(file_path)
+            if not messagebox.askyesno("Run Program", 
+                f"This will run the following program using osu-wine:\n\n"
+                f"{filename}\n\n"
+                f"Full path: {file_path}\n\n"
+                "Continue?"):
+                return
+            
+            # Run the program
+            self.log_to_console(f"Running program with osu-wine: {file_path}")
+            self.status_text.set(f"Running {filename}...")
+            
+            # Run in a separate thread to avoid blocking UI
+            def run_command():
+                try:
+                    result = subprocess.run(
+                        ["osu-wine", "--wine", file_path],
+                        capture_output=True,
+                        text=True,
+                        timeout=300  # 5 minute timeout
+                    )
+                    
+                    # Update UI in main thread
+                    self.after(0, lambda: self._handle_program_result(result, filename))
+                    
+                except subprocess.TimeoutExpired:
+                    self.after(0, lambda: self._handle_program_timeout(filename))
+                except Exception as e:
+                    self.after(0, lambda: self._handle_program_error(str(e), filename))
+            
+            threading.Thread(target=run_command, daemon=True).start()
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to run program: {str(e)}")
+
+    def _handle_program_result(self, result, filename):
+        """Handle the result of running a program"""
+        if result.returncode == 0:
+            self.log_to_console(f"Program '{filename}' completed successfully", "SUCCESS")
+            self.status_text.set(f"Program completed successfully")
+            messagebox.showinfo("Success", 
+                f"Program '{filename}' completed successfully!")
+        else:
+            self.log_to_console(f"Program '{filename}' failed: {result.stderr}", "ERROR")
+            self.status_text.set("Program failed")
+            messagebox.showerror("Program Failed", 
+                f"The program '{filename}' failed to run.\n\n"
+                f"Error: {result.stderr}\n\n"
+                f"Please check the console output for more details.")
+
+    def _handle_program_timeout(self, filename):
+        """Handle timeout of the program"""
+        self.log_to_console(f"Program '{filename}' timed out", "ERROR")
+        self.status_text.set("Program timed out")
+        messagebox.showerror("Timeout", 
+            f"The program '{filename}' timed out after 5 minutes.\n\n"
+            f"The program may still be running in the background.")
+
+    def _handle_program_error(self, error_msg, filename):
+        """Handle error in running the program"""
+        self.log_to_console(f"Program '{filename}' error: {error_msg}", "ERROR")
+        self.status_text.set("Program error")
+        messagebox.showerror("Error", 
+            f"An error occurred while running the program:\n\n"
             f"{error_msg}")
 
     def find_osuwine_executable(self):
@@ -2364,6 +2509,180 @@ echo "export PATH=\"$PATH:{user_bin}\""
         """Update configuration for a specific version"""
         self.version_configs[version] = config
         self.save_config()
+
+    def import_from_zip(self):
+        """Import a client from a zip or .iceclient file"""
+        # Ask user to select a file
+        file_path = filedialog.askopenfilename(
+            title="Select Client File",
+            filetypes=[
+                ("Client files", "*.zip *.iceclient"),
+                ("Zip files", "*.zip"),
+                ("IceClient files", "*.iceclient"),
+                ("All files", "*.*")
+            ]
+        )
+        
+        if not file_path:
+            return
+        
+        # Ask for version name
+        version_name = ctk.CTkInputDialog(
+            text="Enter a name for this client version:",
+            title="Import Client"
+        ).get_input()
+        
+        if not version_name:
+            return
+        
+        # Sanitize version name
+        version_name = "".join(c for c in version_name if c.isalnum() or c in "._-")
+        if not version_name:
+            messagebox.showerror("Error", "Invalid version name")
+            return
+        
+        # Start import in background thread
+        threading.Thread(
+            target=self._import_zip_thread,
+            args=(file_path, version_name),
+            daemon=True
+        ).start()
+
+    def import_from_folder(self):
+        """Import a client from a folder"""
+        # Ask user to select a folder
+        folder_path = filedialog.askdirectory(title="Select Client Folder")
+        
+        if not folder_path:
+            return
+        
+        # Check if folder contains osu!.exe
+        osu_exe_path = os.path.join(folder_path, "osu!.exe")
+        if not os.path.exists(osu_exe_path):
+            messagebox.showerror("Error", "Selected folder does not contain osu!.exe")
+            return
+        
+        # Ask for version name
+        version_name = ctk.CTkInputDialog(
+            text="Enter a name for this client version:",
+            title="Import Client"
+        ).get_input()
+        
+        if not version_name:
+            return
+        
+        # Sanitize version name
+        version_name = "".join(c for c in version_name if c.isalnum() or c in "._-")
+        if not version_name:
+            messagebox.showerror("Error", "Invalid version name")
+            return
+        
+        # Start import in background thread
+        threading.Thread(
+            target=self._import_folder_thread,
+            args=(folder_path, version_name),
+            daemon=True
+        ).start()
+
+    def _import_zip_thread(self, file_path, version_name):
+        """Import client from zip file in background thread"""
+        try:
+            self.log_to_console(f"Importing client from {file_path}...")
+            self.status_text.set("Importing client...")
+            
+            # Create destination directory
+            dest_path = os.path.join(self.versions_dir, version_name)
+            if os.path.exists(dest_path):
+                self.after(0, lambda: messagebox.showerror("Error", f"Version {version_name} already exists"))
+                return
+            
+            os.makedirs(dest_path, exist_ok=True)
+            
+            # Extract zip file
+            with zipfile.ZipFile(file_path, 'r') as zip_ref:
+                zip_ref.extractall(dest_path)
+            
+            # Check if osu!.exe exists in extracted files
+            osu_exe_path = os.path.join(dest_path, "osu!.exe")
+            if not os.path.exists(osu_exe_path):
+                # Look for osu!.exe in subdirectories
+                found = False
+                for root, dirs, files in os.walk(dest_path):
+                    if "osu!.exe" in files:
+                        # Move everything from this subdirectory to dest_path
+                        sub_dir = root
+                        for item in os.listdir(sub_dir):
+                            s = os.path.join(sub_dir, item)
+                            d = os.path.join(dest_path, item)
+                            if os.path.isfile(s):
+                                shutil.move(s, d)
+                            else:
+                                if not os.path.exists(d):
+                                    shutil.move(s, d)
+                        found = True
+                        break
+                
+                if not found:
+                    self.after(0, lambda: messagebox.showerror("Error", "Imported file does not contain osu!.exe"))
+                    shutil.rmtree(dest_path)
+                    return
+            
+            # Add to versions list if not already there
+            if version_name not in self.versions:
+                self.versions.append(version_name)
+            
+            # Save imported versions to config
+            imported_versions = self.version_configs.get('_imported_versions', [])
+            if version_name not in imported_versions:
+                imported_versions.append(version_name)
+                self.version_configs['_imported_versions'] = imported_versions
+                self.save_config()
+            
+            # Refresh UI
+            self.after(0, self.refresh_version_buttons)
+            self.after(0, lambda: self.status_text.set(f"Successfully imported {version_name}"))
+            self.log_to_console(f"Successfully imported {version_name}", "SUCCESS")
+            
+        except Exception as e:
+            self.after(0, lambda: messagebox.showerror("Import Error", f"Failed to import client: {str(e)}"))
+            self.after(0, lambda: self.status_text.set("Import failed"))
+            self.log_to_console(f"Import failed: {str(e)}", "ERROR")
+
+    def _import_folder_thread(self, folder_path, version_name):
+        """Import client from folder in background thread"""
+        try:
+            self.log_to_console(f"Importing client from {folder_path}...")
+            self.status_text.set("Importing client...")
+            
+            # Create destination directory
+            dest_path = os.path.join(self.versions_dir, version_name)
+            if os.path.exists(dest_path):
+                self.after(0, lambda: messagebox.showerror("Error", f"Version {version_name} already exists"))
+                return
+            
+            # Copy folder contents
+            shutil.copytree(folder_path, dest_path)
+            
+            # Add to versions list if not already there
+            if version_name not in self.versions:
+                self.versions.append(version_name)
+            
+            # Save imported versions to config
+            imported_versions = self.version_configs.get('_imported_versions', [])
+            if version_name not in imported_versions:
+                imported_versions.append(version_name)
+                self.version_configs['_imported_versions'] = imported_versions
+                self.save_config()
+            
+            # Refresh UI
+            self.after(0, self.refresh_version_buttons)
+            self.after(0, lambda: self.status_text.set(f"Successfully imported {version_name}"))
+            self.log_to_console(f"Successfully imported {version_name}", "SUCCESS")
+            
+        except Exception as e:
+            self.after(0, lambda: messagebox.showerror("Import Error", f"Failed to import client: {str(e)}"))
+            self.after(0, lambda: self.status_text.set("Import failed"))
+            self.log_to_console(f"Import failed: {str(e)}", "ERROR")
 
 def main():
     app = TitanicLauncher()
