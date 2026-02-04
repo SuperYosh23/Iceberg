@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import customtkinter as ctk
-from tkinter import messagebox, filedialog
+from tkinter import messagebox, filedialog, font as tkinter_font
 import requests
 import os
 import subprocess
@@ -57,7 +57,9 @@ class TitanicLauncher(ctk.CTk):
         
         # Options variables
         self.appearance_mode = ctk.StringVar(value="dark")
-        self.accent_color = ctk.StringVar(value="blue")
+        self.accent_color = ctk.StringVar(value="#F8A6BE")
+        self.text_color = ctk.StringVar(value="white")  # Will be updated based on mode
+        self.button_text_color = ctk.StringVar(value="black")
         
         # Visual customization variables
         self.custom_bg_image = ctk.StringVar(value="")
@@ -79,11 +81,22 @@ class TitanicLauncher(ctk.CTk):
         self.user_country = ctk.StringVar(value="-")
         self.avatar_image = None
         
+        # Font caching
+        self.comfortaa_font_path = os.path.join(self.versions_dir, "Comfortaa-Bold.ttf")
+        self.logo_font = self.setup_logo_font()
+        
         # Grid configuration
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
+        # Download logo if not cached
+        self.download_logo_if_missing()
+        
         self.setup_ui()
+        
+        # Bind sidebar position changes to update logo alignment
+        self.sidebar_position.trace('w', lambda *args: self.update_logo_alignment())
+        
         self.load_options_config()
         self.load_auth_config()
         self.load_config()
@@ -92,6 +105,158 @@ class TitanicLauncher(ctk.CTk):
         
         # Bind window resize event to update background
         self.bind("<Configure>", self.on_window_resize)
+        
+        # Apply Comfortaa font after UI is fully loaded
+        self.after(500, self._apply_logo_font_delayed)
+
+    def download_logo_if_missing(self):
+        """Download logo.png from GitHub if not already cached"""
+        if os.path.exists(self.logo_path):
+            print(f"Logo found at {self.logo_path}")
+            return
+        
+        try:
+            print("Downloading logo...")
+            logo_url = "https://github.com/SuperYosh23/Iceberg/blob/main/logo.png?raw=true"
+            response = requests.get(logo_url, timeout=10)
+            
+            if response.status_code == 200:
+                with open(self.logo_path, 'wb') as f:
+                    f.write(response.content)
+                print(f"Logo cached at {self.logo_path}")
+            else:
+                print(f"Failed to download logo: {response.status_code}")
+        except Exception as e:
+            print(f"Error downloading logo: {e}")
+
+    def update_logo_alignment(self):
+        """Update logo and text alignment based on sidebar position"""
+        try:
+            if not hasattr(self, 'logo_label'):
+                return
+            
+            # Get the logo title frame inner frame
+            if hasattr(self, 'logo_label') and self.logo_label.winfo_exists():
+                parent = self.logo_label.master
+                
+                # Determine sidebar alignment - logo and text are adjacent
+                is_sidebar_left = self.sidebar_position.get() == "left"
+                anchor_pos = "w" if is_sidebar_left else "e"
+                
+                # Logo and text pack in same direction, adjacent to each other
+                pack_side = "left" if is_sidebar_left else "right"
+                logo_padx = (0, 8) if is_sidebar_left else (8, 0)  # Spacing between logo and text
+                
+                # Update the inner frame anchor
+                parent.pack_configure(fill="x", expand=True, anchor=anchor_pos)
+                
+                # Update logo image packing if it exists
+                if self.logo_image_label:
+                    self.logo_image_label.pack_configure(side=pack_side, padx=logo_padx)
+                
+                # Update text packing
+                self.logo_label.pack_configure(side=pack_side)
+        except Exception as e:
+            print(f"Error updating logo alignment: {e}")
+
+    def setup_logo_font(self):
+        """Setup and cache Comfortaa font, fallback to Arial"""
+        try:
+            # Check if font already cached
+            if os.path.exists(self.comfortaa_font_path):
+                print(f"Comfortaa font found at {self.comfortaa_font_path}")
+                # Try to install it to system fonts on Linux
+                if sys.platform != "win32" and sys.platform != "darwin":
+                    self._install_font_to_system()
+                return "Comfortaa"
+            
+            # Try to download Comfortaa font
+            print("Downloading Comfortaa font...")
+            font_url = "https://github.com/alexeiva/comfortaa/raw/refs/heads/master/fonts/TTF/Comfortaa-Bold.ttf"
+            response = requests.get(font_url, timeout=10)
+            
+            if response.status_code == 200:
+                with open(self.comfortaa_font_path, 'wb') as f:
+                    f.write(response.content)
+                print(f"Comfortaa font cached at {self.comfortaa_font_path}")
+                
+                # Try to install it to system fonts on Linux
+                if sys.platform != "win32" and sys.platform != "darwin":
+                    self._install_font_to_system()
+                
+                return "Comfortaa"
+            else:
+                print(f"Failed to download font: {response.status_code}")
+                return None
+        except Exception as e:
+            print(f"Error downloading Comfortaa font: {e}")
+            return None
+
+    def _install_font_to_system(self):
+        """Install font to system fonts directory (Linux)"""
+        try:
+            fonts_dir = os.path.expanduser("~/.local/share/fonts")
+            os.makedirs(fonts_dir, exist_ok=True)
+            
+            # Copy font to user fonts directory
+            import shutil as sh
+            dest_path = os.path.join(fonts_dir, "Comfortaa-Bold.ttf")
+            if not os.path.exists(dest_path):
+                sh.copy2(self.comfortaa_font_path, dest_path)
+                print(f"Installed font to {dest_path}")
+                
+                # Update font cache
+                try:
+                    subprocess.run(["fc-cache", "-f", fonts_dir], timeout=5)
+                    print("Updated font cache")
+                except:
+                    pass
+        except Exception as e:
+            print(f"Could not install font to system: {e}")
+
+    def _apply_logo_font_delayed(self):
+        """Apply Comfortaa font to logo label after a delay to ensure system recognizes it"""
+        try:
+            if self.logo_font and hasattr(self, 'logo_label'):
+                self.logo_label.configure(font=ctk.CTkFont(family=self.logo_font, size=26, weight="bold"))
+                print(f"Applied {self.logo_font} font to logo label")
+        except Exception as e:
+            print(f"Could not apply font after delay: {e}")
+
+    def apply_popup_styling(self, window):
+        """Apply all current styling (colors, corner radius) to a popup window and its widgets"""
+        try:
+            # Apply appearance mode
+            ctk.set_appearance_mode(self.appearance_mode.get())
+            
+            # Recursively apply styling to all buttons in the window
+            self._apply_styling_to_widgets(window)
+        except Exception as e:
+            print(f"Error applying popup styling: {e}")
+
+    def _apply_styling_to_widgets(self, widget):
+        """Recursively apply styling to all button widgets"""
+        try:
+            # Apply styling to this widget if it's a button
+            if isinstance(widget, ctk.CTkButton):
+                widget.configure(
+                    fg_color=self.accent_color.get(),
+                    text_color=self.button_text_color.get(),
+                    corner_radius=self.button_corner_radius.get()
+                )
+            
+            # Apply text color to labels
+            if isinstance(widget, ctk.CTkLabel):
+                widget.configure(text_color=self.text_color.get())
+            
+            # Recursively apply to child widgets
+            try:
+                for child in widget.winfo_children():
+                    self._apply_styling_to_widgets(child)
+            except:
+                pass
+        except Exception as e:
+            pass
 
     def setup_ui(self):
         # === SIDEBAR ===
@@ -99,8 +264,43 @@ class TitanicLauncher(ctk.CTk):
         self.sidebar_frame.grid(row=0, column=0, sticky="nsew")
         self.sidebar_frame.grid_rowconfigure(2, weight=1)
 
-        # Title only - no logo
-        ctk.CTkLabel(self.sidebar_frame, text="ICEBERG", font=ctk.CTkFont(size=18, weight="bold")).grid(row=0, column=0, pady=(20, 10))
+        # Logo and title frame - no border
+        logo_title_frame = ctk.CTkFrame(self.sidebar_frame, fg_color="transparent")
+        logo_title_frame.grid(row=0, column=0, pady=(20, 10), padx=10, sticky="ew")
+        logo_title_frame.grid_columnconfigure(0, weight=1)
+        
+        # Determine sidebar alignment
+        is_sidebar_left = self.sidebar_position.get() == "left"
+        anchor_pos = "center"
+        
+        # Text and logo on opposite sides
+        text_pack_side = "left" if is_sidebar_left else "right"
+        logo_pack_side = "right" if is_sidebar_left else "left"
+        logo_padx = (10, 0) if is_sidebar_left else (0, 10)
+        
+        # Create inner frame that fills the width and aligns content
+        inner_frame = ctk.CTkFrame(logo_title_frame, fg_color="transparent")
+        inner_frame.pack(fill="x", expand=True, anchor=anchor_pos)
+        
+        # Load and display logo image
+        self.logo_image_label = None
+        if os.path.exists(self.logo_path):
+            try:
+                pil_image = Image.open(self.logo_path)
+                # Scale to 32x32
+                pil_image = pil_image.resize((32, 32), Image.Resampling.LANCZOS)
+                self.logo_image = ctk.CTkImage(light_image=pil_image, dark_image=pil_image, size=(32, 32))
+                self.logo_image_label = ctk.CTkLabel(inner_frame, image=self.logo_image, text="")
+                self.logo_image_label.pack(side=logo_pack_side, padx=logo_padx)
+            except Exception as e:
+                print(f"Failed to load logo image: {e}")
+        
+        # Use Comfortaa if available, fallback to Arial
+        if self.logo_font:
+            self.logo_label = ctk.CTkLabel(inner_frame, text="Iceberg", font=ctk.CTkFont(family=self.logo_font, size=26, weight="bold"))
+        else:
+            self.logo_label = ctk.CTkLabel(inner_frame, text="Iceberg", font=ctk.CTkFont(family="Arial", size=26, weight="bold"))
+        self.logo_label.pack(side=text_pack_side)
         
         # User info section
         user_frame = ctk.CTkFrame(self.sidebar_frame)
@@ -149,18 +349,26 @@ class TitanicLauncher(ctk.CTk):
         self.scrollable_list.bind("<Button-4>", self._on_mousewheel)  # Linux scroll up
         self.scrollable_list.bind("<Button-5>", self._on_mousewheel)  # Linux scroll down
 
-        # Action buttons
-        self.download_clients_btn = ctk.CTkButton(self.sidebar_frame, text="📥 Download Clients", command=self.open_download_dialog, fg_color="#1bd964", hover_color="#15a34a", text_color="black")
-        self.download_clients_btn.grid(row=3, column=0, padx=20, pady=5)
+        # Action buttons frame - icon only with tooltips, arranged horizontally
+        buttons_frame = ctk.CTkFrame(self.sidebar_frame)
+        buttons_frame.grid(row=3, column=0, padx=10, pady=10, sticky="ew")
+        buttons_frame.grid_columnconfigure((0, 1, 2, 3), weight=1)
         
-        self.options_btn = ctk.CTkButton(self.sidebar_frame, text="⚙️ Options", command=self.open_options_dialog, fg_color="#6c757d")
-        self.options_btn.grid(row=4, column=0, padx=20, pady=5)
+        self.download_clients_btn = ctk.CTkButton(buttons_frame, text="↓", width=30, height=30, command=self.open_download_dialog, fg_color="#F8A6BE", hover_color="#e8949d", text_color="black", font=ctk.CTkFont(size=14), corner_radius=self.button_corner_radius.get())
+        self.download_clients_btn.grid(row=0, column=0, padx=2, pady=2, sticky="ew")
+        self._add_tooltip(self.download_clients_btn, "Download Clients")
         
-        self.refresh_btn = ctk.CTkButton(self.sidebar_frame, text="🔄 Refresh Versions", command=self.load_versions, fg_color="gray25")
-        self.refresh_btn.grid(row=5, column=0, padx=20, pady=5)
+        self.options_btn = ctk.CTkButton(buttons_frame, text="⚙", width=30, height=30, command=self.open_options_dialog, fg_color="#F8A6BE", text_color="black", font=ctk.CTkFont(size=14), corner_radius=self.button_corner_radius.get())
+        self.options_btn.grid(row=0, column=1, padx=2, pady=2, sticky="ew")
+        self._add_tooltip(self.options_btn, "Options")
+        
+        self.refresh_btn = ctk.CTkButton(buttons_frame, text="↻", width=30, height=30, command=self.load_versions, fg_color="#F8A6BE", text_color="black", font=ctk.CTkFont(size=14), corner_radius=self.button_corner_radius.get())
+        self.refresh_btn.grid(row=0, column=2, padx=2, pady=2, sticky="ew")
+        self._add_tooltip(self.refresh_btn, "Refresh Versions")
 
-        self.delete_btn = ctk.CTkButton(self.sidebar_frame, text="🗑️ Delete Version", fg_color="#cf3838", hover_color="#8a2525", command=self.delete_version)
-        self.delete_btn.grid(row=6, column=0, padx=20, pady=(5, 20))
+        self.delete_btn = ctk.CTkButton(buttons_frame, text="✕", width=30, height=30, fg_color="#F8A6BE", hover_color="#e8949d", command=self.delete_version, font=ctk.CTkFont(size=14), text_color="black", corner_radius=self.button_corner_radius.get())
+        self.delete_btn.grid(row=0, column=3, padx=2, pady=2, sticky="ew")
+        self._add_tooltip(self.delete_btn, "Delete Version")
 
         # === MAIN PANEL ===
         self.main_frame = ctk.CTkFrame(self, corner_radius=0, fg_color="transparent")
@@ -263,7 +471,7 @@ class TitanicLauncher(ctk.CTk):
         self.launch_args_entry.pack(fill="x", pady=(0, 10))
         
         # Save button
-        self.save_settings_btn = ctk.CTkButton(self.settings_form, text="💾 Save Settings", command=self.save_current_version_settings, fg_color="#28a745")
+        self.save_settings_btn = ctk.CTkButton(self.settings_form, text="Save Settings", command=self.save_current_version_settings, fg_color="#28a745")
         self.save_settings_btn.pack(pady=10)
         
         # Help text
@@ -307,7 +515,7 @@ class TitanicLauncher(ctk.CTk):
         # Clear console button
         self.clear_console_btn = ctk.CTkButton(
             self.console_header_frame,
-            text="🗑️ Clear",
+            text="Clear",
             width=60,
             fg_color="gray30",
             command=self.clear_console
@@ -331,14 +539,16 @@ class TitanicLauncher(ctk.CTk):
         self.progress_bar.set(0)
 
         # Folder buttons (move to main frame)
-        self.folder_btn = ctk.CTkButton(self.main_frame, text="📂 Open Versions Folder", command=self.open_versions_folder, fg_color="gray30")
+        self.folder_btn = ctk.CTkButton(self.main_frame, text="Open Versions Folder", command=self.open_versions_folder, fg_color="gray30")
         self.folder_btn.pack(fill="x", padx=20, pady=(10, 5))
 
         # Status and dynamic launch/download button
         self.status_label = ctk.CTkLabel(self.main_frame, textvariable=self.status_text, text_color="gray")
         self.status_label.pack(side="bottom", pady=5)
         
-        self.launch_btn = ctk.CTkButton(self.main_frame, text="🎮 LAUNCH GAME", height=55, font=ctk.CTkFont(size=20, weight="bold"), command=self.handle_main_action)
+        # Create launch button with Comfortaa font if available
+        launch_font = ctk.CTkFont(family=self.logo_font, size=20, weight="bold") if self.logo_font else ctk.CTkFont(size=20, weight="bold")
+        self.launch_btn = ctk.CTkButton(self.main_frame, text="Start osu!", height=55, font=launch_font, command=self.handle_main_action, fg_color=self.accent_color.get(), text_color=self.button_text_color.get(), corner_radius=self.button_corner_radius.get())
         self.launch_btn.pack(side="bottom", fill="x", padx=20, pady=10)
 
     def load_versions(self):
@@ -487,6 +697,7 @@ class TitanicLauncher(ctk.CTk):
                 border_width=1,
                 anchor="w",
                 height=40,
+                corner_radius=self.button_corner_radius.get(),
                 command=lambda v=version: self.select_version(v)
             )
             btn.grid(row=0, column=0, sticky="ew", padx=(0, 5))
@@ -623,12 +834,12 @@ class TitanicLauncher(ctk.CTk):
             config_text = "\n".join(config_info) if config_info else "No custom arguments set"
             
             self.description_text.insert("end", f"Status: Installed ✓\nSize: {size_str}\nPath: {version_path}\n\n{config_text}")
-            # Update button to launch
-            self.launch_btn.configure(text="🎮 LAUNCH GAME", fg_color=("#3B8ED0", "#1F6AA5"))
+            # Update button to launch with accent color
+            self.launch_btn.configure(text="Start osu!", fg_color=self.accent_color.get(), text_color=self.button_text_color.get(), state="normal")
         else:
             # This shouldn't happen with the new UI, but handle it gracefully
             self.description_text.insert("end", f"Status: Not installed\nUse 'Download Clients' to install this version.")
-            self.launch_btn.configure(text="🎮 LAUNCH GAME", fg_color=("#3B8ED0", "#1F6AA5"), state="disabled")
+            self.launch_btn.configure(text="Start osu!", fg_color=self.accent_color.get(), text_color=self.button_text_color.get(), state="disabled")
         
         self.description_text.configure(state="disabled")
         
@@ -721,6 +932,39 @@ class TitanicLauncher(ctk.CTk):
             print(f"Error updating preview image: {e}")
             # Fallback to clear image
             self.clear_preview_image("Preview image unavailable")
+
+    def _add_tooltip(self, widget, text):
+        """Add a tooltip to a widget that shows on hover"""
+        tooltip_label = None
+        
+        def on_enter(event):
+            nonlocal tooltip_label
+            # Get widget position
+            x = widget.winfo_rootx() + widget.winfo_width() + 5
+            y = widget.winfo_rooty()
+            
+            # Create tooltip window
+            tooltip_label = ctk.CTkLabel(
+                self,
+                text=text,
+                bg_color="transparent",
+                fg_color="#333333",
+                text_color="white",
+                font=ctk.CTkFont(size=10),
+                corner_radius=4,
+                padx=8,
+                pady=4
+            )
+            tooltip_label.place(x=x, y=y)
+        
+        def on_leave(event):
+            nonlocal tooltip_label
+            if tooltip_label:
+                tooltip_label.destroy()
+                tooltip_label = None
+        
+        widget.bind("<Enter>", on_enter)
+        widget.bind("<Leave>", on_leave)
 
     def _on_mousewheel(self, event):
         """Handle mouse wheel scrolling for the sidebar"""
@@ -1048,14 +1292,14 @@ class TitanicLauncher(ctk.CTk):
             self.log_to_console(f"Successfully launched {display_name}", "SUCCESS")
             
             # Re-enable button after a delay
-            self.after(2000, lambda: self.launch_btn.configure(state="normal", text="🎮 LAUNCH GAME"))
+            self.after(2000, lambda: self.launch_btn.configure(state="normal", text="Start osu!", fg_color=self.accent_color.get(), text_color=self.button_text_color.get()))
             
         except Exception as e:
             error_msg = f"Failed to launch {version}: {str(e)}"
             self.log_to_console(error_msg, "ERROR")
             messagebox.showerror("Error", error_msg)
             self.status_text.set(f"Failed to launch {version}")
-            self.launch_btn.configure(state="normal", text="🎮 LAUNCH GAME")
+            self.launch_btn.configure(state="normal", text="Start osu!", fg_color=self.accent_color.get(), text_color=self.button_text_color.get())
 
     def delete_version(self):
         """Delete selected installed version"""
@@ -1094,7 +1338,7 @@ class TitanicLauncher(ctk.CTk):
                     self.launch_args_entry.delete(0, 'end')
                     
                     # Reset button to default state
-                    self.launch_btn.configure(text="🎮 LAUNCH GAME", fg_color=("#3B8ED0", "#1F6AA5"))
+                    self.launch_btn.configure(text="Start osu!", fg_color=self.accent_color.get(), text_color=self.button_text_color.get())
                 
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to delete {version}: {str(e)}")
@@ -1136,6 +1380,9 @@ class TitanicLauncher(ctk.CTk):
     def open_download_dialog(self):
         """Open download dialog showing available clients to download"""
         # Create download window
+        # Set appearance mode for the popup
+        ctk.set_appearance_mode(self.appearance_mode.get())
+        
         download_window = ctk.CTkToplevel(self)
         download_window.title("Download Clients")
         download_window.geometry("800x600")
@@ -1167,7 +1414,7 @@ class TitanicLauncher(ctk.CTk):
         
         import_folder_btn = ctk.CTkButton(
             import_frame,
-            text="📂 Import from Folder",
+            text="Import from Folder",
             fg_color="#17a2b8",
             hover_color="#138496",
             command=self.import_from_folder
@@ -1211,7 +1458,7 @@ class TitanicLauncher(ctk.CTk):
                 # Download button
                 download_btn = ctk.CTkButton(
                     client_frame,
-                    text="📥 Download",
+                    text="Download",
                     fg_color="#1bd964",
                     hover_color="#15a34a",
                     text_color="black",
@@ -1248,6 +1495,9 @@ class TitanicLauncher(ctk.CTk):
                 print(f"Grab failed: {e}")
         
         download_window.after(100, set_grab_safely)
+        
+        # Apply styling to popup
+        self.after(150, lambda: self.apply_popup_styling(download_window))
 
     def download_from_dialog(self, version, window):
         """Download a version from the download dialog"""
@@ -1265,6 +1515,9 @@ class TitanicLauncher(ctk.CTk):
         display_name = config['custom_name']
         description = self.version_descriptions.get(version, "No description available")
         image_url = self.version_images.get(version)
+        
+        # Set appearance mode for the popup
+        ctk.set_appearance_mode(self.appearance_mode.get())
         
         # Create preview window
         preview_window = ctk.CTkToplevel(self)
@@ -1305,7 +1558,7 @@ class TitanicLauncher(ctk.CTk):
         
         download_btn = ctk.CTkButton(
             button_frame,
-            text="📥 Download",
+            text="Download",
             fg_color="#1bd964",
             hover_color="#15a34a",
             text_color="black",
@@ -1347,6 +1600,9 @@ class TitanicLauncher(ctk.CTk):
                 print(f"Grab failed: {e}")
         
         preview_window.after(100, set_grab_safely)
+        
+        # Apply styling to popup
+        self.after(150, lambda: self.apply_popup_styling(preview_window))
 
     def load_preview_image_for_window(self, image_url, image_label):
         """Load preview image for preview window"""
@@ -1411,6 +1667,9 @@ class TitanicLauncher(ctk.CTk):
     def open_options_dialog(self):
         """Open options dialog for appearance and settings"""
         # Create options window
+        # Set appearance mode for the popup
+        ctk.set_appearance_mode(self.appearance_mode.get())
+        
         options_window = ctk.CTkToplevel(self)
         options_window.title("Options")
         options_window.geometry("500x700")  # Increased height for more content
@@ -1454,62 +1713,47 @@ class TitanicLauncher(ctk.CTk):
         
         ctk.CTkLabel(color_frame, text="Accent Color:", font=ctk.CTkFont(weight="bold")).pack(side="left", padx=10)
         
-        color_options = ["blue", "green", "dark-blue", "red"]
-        color_menu = ctk.CTkOptionMenu(
+        color_btn = ctk.CTkButton(
             color_frame,
-            variable=self.accent_color,
-            values=color_options,
-            command=lambda choice: self.update_accent_color(choice)
+            text="Choose Color",
+            width=100,
+            command=self.open_color_picker
         )
-        color_menu.pack(side="left", padx=10)
+        color_btn.pack(side="left", padx=10)
+        
+        # Text color selection
+        text_color_frame = ctk.CTkFrame(appearance_frame)
+        text_color_frame.pack(fill="x", padx=10, pady=5)
+        
+        ctk.CTkLabel(text_color_frame, text="Text Color:", font=ctk.CTkFont(weight="bold")).pack(side="left", padx=10)
+        
+        text_color_btn = ctk.CTkButton(
+            text_color_frame,
+            text="Choose Color",
+            width=100,
+            command=self.open_text_color_picker
+        )
+        text_color_btn.pack(side="left", padx=10)
+        
+        # Button text color selection
+        button_text_color_frame = ctk.CTkFrame(appearance_frame)
+        button_text_color_frame.pack(fill="x", padx=10, pady=5)
+        
+        ctk.CTkLabel(button_text_color_frame, text="Button Text Color:", font=ctk.CTkFont(weight="bold")).pack(side="left", padx=10)
+        
+        button_text_color_btn = ctk.CTkButton(
+            button_text_color_frame,
+            text="Choose Color",
+            width=100,
+            command=self.open_button_text_color_picker
+        )
+        button_text_color_btn.pack(side="left", padx=10)
         
         # Visual Customization section
         visual_frame = ctk.CTkFrame(scrollable_frame)
         visual_frame.pack(fill="x", pady=(0, 20))
         
         ctk.CTkLabel(visual_frame, text="Visual Customization", font=ctk.CTkFont(size=18, weight="bold")).pack(anchor="w", padx=10, pady=(10, 5))
-        
-        # Custom background image
-        bg_frame = ctk.CTkFrame(visual_frame)
-        bg_frame.pack(fill="x", padx=10, pady=5)
-        
-        ctk.CTkLabel(bg_frame, text="Background Image:", font=ctk.CTkFont(weight="bold")).pack(side="left", padx=10)
-        
-        bg_btn = ctk.CTkButton(
-            bg_frame,
-            text="Choose Image",
-            width=100,
-            command=self.choose_background_image
-        )
-        bg_btn.pack(side="left", padx=10)
-        
-        bg_clear_btn = ctk.CTkButton(
-            bg_frame,
-            text="Clear",
-            width=60,
-            fg_color="#dc3545",
-            hover_color="#c82333",
-            command=self.clear_background_image
-        )
-        bg_clear_btn.pack(side="left", padx=5)
-        
-        # Font size
-        font_frame = ctk.CTkFrame(visual_frame)
-        font_frame.pack(fill="x", padx=10, pady=5)
-        
-        ctk.CTkLabel(font_frame, text="Font Size:", font=ctk.CTkFont(weight="bold")).pack(side="left", padx=10)
-        
-        font_slider = ctk.CTkSlider(
-            font_frame,
-            from_=8,
-            to=20,
-            variable=self.custom_font_size,
-            command=lambda value: self.update_font_size(int(value))
-        )
-        font_slider.pack(side="left", padx=10, fill="x", expand=True)
-        
-        font_label = ctk.CTkLabel(font_frame, textvariable=self.custom_font_size, width=30)
-        font_label.pack(side="left", padx=5)
         
         # Button corner radius
         corner_frame = ctk.CTkFrame(visual_frame)
@@ -1613,7 +1857,7 @@ class TitanicLauncher(ctk.CTk):
         if not self.is_windows():
             self.osuwine_btn = ctk.CTkButton(
                 tools_frame,
-                text="📥 Download osu-wine",
+                text="Download osu-wine",
                 fg_color="#ff6b35",
                 hover_color="#e55a2b",
                 command=self.download_osuwine_placeholder
@@ -1711,6 +1955,9 @@ class TitanicLauncher(ctk.CTk):
                 print(f"Grab failed: {e}")
         
         options_window.after(100, set_grab_safely)
+        
+        # Apply styling to popup
+        self.after(150, lambda: self.apply_popup_styling(options_window))
 
     def update_appearance_mode(self):
         """Update the appearance mode"""
@@ -1720,13 +1967,20 @@ class TitanicLauncher(ctk.CTk):
         self.save_options_config()
 
     def update_accent_color(self, color):
-        """Update the accent color"""
-        ctk.set_default_color_theme(color)
-        self.accent_color.set(color)
-        # Save to config
-        self.save_options_config()
-        # Note: Color theme change requires restart to take full effect
-        messagebox.showinfo("Color Changed", f"Accent color changed to {color}.\nRestart the launcher for full effect.")
+        """Update the accent color (for backwards compatibility)"""
+        # This is now only used for loading saved theme names, not for hex colors
+        if color.startswith('#'):
+            # It's a hex color, just save it
+            self.accent_color.set(color)
+            self.save_options_config()
+        else:
+            # It's a theme name, set the theme
+            try:
+                ctk.set_default_color_theme(color)
+                self.accent_color.set(color)
+                self.save_options_config()
+            except Exception as e:
+                self.log_to_console(f"Failed to set accent color: {e}", "ERROR")
 
     def download_osuwine_placeholder(self):
         """Install osu-wine automatically"""
@@ -2122,7 +2376,7 @@ echo "export PATH=\"$PATH:{user_bin}\""
                 )
             else:
                 self.osuwine_btn.configure(
-                    text="📥 Download osu-wine",
+                    text="Download osu-wine",
                     fg_color="#ff6b35",
                     hover_color="#e55a2b",
                     state="normal"
@@ -2140,7 +2394,9 @@ echo "export PATH=\"$PATH:{user_bin}\""
             # Add options
             config['options'] = {
                 'appearance_mode': self.appearance_mode.get(),
-                'accent_color': self.accent_color.get()
+                'accent_color': self.accent_color.get(),
+                'text_color': self.text_color.get(),
+                'button_text_color': self.button_text_color.get()
             }
             
             # Add auth data if logged in
@@ -2210,6 +2466,9 @@ echo "export PATH=\"$PATH:{user_bin}\""
                 self.logout()
             return
         
+        # Set appearance mode for the popup
+        ctk.set_appearance_mode(self.appearance_mode.get())
+        
         # Create login dialog
         login_window = ctk.CTkToplevel(self)
         login_window.title("Login to Titanic")
@@ -2237,6 +2496,9 @@ echo "export PATH=\"$PATH:{user_bin}\""
                 print(f"Grab failed: {e}")
         
         login_window.after(100, set_grab_safely)
+        
+        # Apply styling to popup
+        self.after(150, lambda: self.apply_popup_styling(login_window))
         
         # Center the dialog
         login_window.update_idletasks()
@@ -2507,11 +2769,35 @@ echo "export PATH=\"$PATH:{user_bin}\""
                     
                 options = config.get('options', {})
                 self.appearance_mode.set(options.get('appearance_mode', 'dark'))
-                self.accent_color.set(options.get('accent_color', 'blue'))
+                accent = options.get('accent_color', '#F8A6BE')
+                # Set default text color based on mode
+                default_text_color = 'white' if self.appearance_mode.get() == 'dark' else 'black'
+                text_color = options.get('text_color', default_text_color)
+                button_text_color = options.get('button_text_color', 'black')
+                self.accent_color.set(accent)
+                self.text_color.set(text_color)
+                self.button_text_color.set(button_text_color)
                 
                 # Apply settings
                 ctk.set_appearance_mode(self.appearance_mode.get())
-                ctk.set_default_color_theme(self.accent_color.get())
+                
+                # If it's a hex color, apply it to elements; otherwise try theme
+                if accent.startswith('#'):
+                    # Schedule the color application after UI is ready
+                    self.after(100, lambda: self.apply_accent_color(accent))
+                else:
+                    try:
+                        ctk.set_default_color_theme(accent)
+                    except:
+                        pass
+                
+                # Apply text color
+                if text_color.startswith('#') or text_color in ['white', 'black', 'gray']:
+                    self.after(100, lambda: self.apply_text_color(text_color))
+                
+                # Apply button text color
+                if button_text_color.startswith('#') or button_text_color in ['white', 'black', 'gray']:
+                    self.after(100, lambda: self.apply_button_text_color(button_text_color))
         except Exception as e:
             print(f"Failed to load options config: {e}")
 
@@ -2830,133 +3116,114 @@ echo "export PATH=\"$PATH:{user_bin}\""
 
     # === CUSTOMIZATION FUNCTIONS ===
     
-    def choose_background_image(self):
-        """Choose a custom background image"""
-        from tkinter import filedialog
-        file_path = filedialog.askopenfilename(
-            title="Choose Background Image",
-            filetypes=[
-                ("Image files", "*.png *.jpg *.jpeg *.gif *.bmp"),
-                ("PNG files", "*.png"),
-                ("JPEG files", "*.jpg *.jpeg"),
-                ("All files", "*.*")
-            ]
-        )
+    def open_color_picker(self):
+        """Open a color picker dialog for accent color"""
+        from tkinter import colorchooser
         
-        if file_path:
-            self.custom_bg_image.set(file_path)
-            self.apply_background_image()
-            self.save_customization_config()
+        color = colorchooser.askcolor(title="Choose Accent Color")
+        if color[1]:  # color[1] is hex value
+            hex_color = color[1].upper()
+            self.accent_color.set(hex_color)
+            self.apply_accent_color(hex_color)
+            self.save_options_config()
+            self.log_to_console(f"Accent color changed to {hex_color}", "SUCCESS")
+    
+    def open_text_color_picker(self):
+        """Open a color picker dialog for text color"""
+        from tkinter import colorchooser
+        
+        color = colorchooser.askcolor(title="Choose Text Color")
+        if color[1]:  # color[1] is hex value
+            hex_color = color[1].upper()
+            self.text_color.set(hex_color)
+            self.apply_text_color(hex_color)
+            self.save_options_config()
+            self.log_to_console(f"Text color changed to {hex_color}", "SUCCESS")
+    
+    def open_button_text_color_picker(self):
+        """Open a color picker dialog for button text color"""
+        from tkinter import colorchooser
+        
+        color = colorchooser.askcolor(title="Choose Button Text Color")
+        if color[1]:  # color[1] is hex value
+            hex_color = color[1].upper()
+            self.button_text_color.set(hex_color)
+            self.apply_button_text_color(hex_color)
+            self.save_options_config()
+            self.log_to_console(f"Button text color changed to {hex_color}", "SUCCESS")
+    
+    def apply_accent_color(self, hex_color):
+        """Apply the accent color to UI elements"""
+        try:
+            # Apply to ALL buttons
+            buttons_to_color = [
+                'launch_btn', 'download_clients_btn', 'options_btn', 
+                'refresh_btn', 'delete_btn', 'folder_btn', 'save_settings_btn',
+                'details_toggle_btn', 'settings_toggle_btn', 'console_toggle_btn',
+                'clear_console_btn'
+            ]
+            
+            for btn_name in buttons_to_color:
+                if hasattr(self, btn_name):
+                    btn = getattr(self, btn_name)
+                    btn.configure(fg_color=hex_color)
+                    
+        except Exception as e:
+            self.log_to_console(f"Failed to apply accent color: {e}", "ERROR")
+    
+    def apply_button_text_color(self, hex_color):
+        """Apply the button text color to all buttons"""
+        try:
+            # Apply to ALL buttons
+            buttons_to_color = [
+                'launch_btn', 'download_clients_btn', 'options_btn', 
+                'refresh_btn', 'delete_btn', 'folder_btn', 'save_settings_btn',
+                'details_toggle_btn', 'settings_toggle_btn', 'console_toggle_btn',
+                'clear_console_btn'
+            ]
+            
+            for btn_name in buttons_to_color:
+                if hasattr(self, btn_name):
+                    btn = getattr(self, btn_name)
+                    btn.configure(text_color=hex_color)
+                    
+        except Exception as e:
+            self.log_to_console(f"Failed to apply button text color: {e}", "ERROR")
+    
+    def apply_text_color(self, hex_color):
+        """Apply the text color to UI elements (NOT buttons)"""
+        try:
+            # Apply to labels and text throughout the UI
+            if hasattr(self, 'header_label'):
+                self.header_label.configure(text_color=hex_color)
+            
+            if hasattr(self, 'details_title_label'):
+                self.details_title_label.configure(text_color=hex_color)
+            
+            if hasattr(self, 'settings_title_label'):
+                self.settings_title_label.configure(text_color=hex_color)
+            
+            if hasattr(self, 'console_title_label'):
+                self.console_title_label.configure(text_color=hex_color)
+                    
+        except Exception as e:
+            self.log_to_console(f"Failed to apply text color: {e}", "ERROR")
+    
+    def choose_background_image(self):
+        """Disabled - background image feature removed"""
+        pass
     
     def clear_background_image(self):
-        """Clear the custom background image"""
-        self.custom_bg_image.set("")
-        self.apply_background_image()
-        self.save_customization_config()
+        """Disabled - background image feature removed"""
+        pass
     
     def apply_background_image(self):
-        """Apply the custom background image using a background label"""
-        try:
-            if self.custom_bg_image.get():
-                from PIL import Image
-                
-                # Load and set background image
-                bg_image = Image.open(self.custom_bg_image.get())
-                
-                # Target the main scrollable frame
-                if hasattr(self, 'main_scrollable'):
-                    # Get scrollable frame size
-                    scroll_width = 750  # Default size
-                    scroll_height = 550  # Default size
-                    
-                    # Try to get actual size if available
-                    try:
-                        scroll_width = self.main_scrollable.winfo_width()
-                        scroll_height = self.main_scrollable.winfo_height()
-                        if scroll_width <= 1:
-                            scroll_width = 750
-                        if scroll_height <= 1:
-                            scroll_height = 550
-                    except:
-                        pass
-                    
-                    bg_image = bg_image.resize((scroll_width, scroll_height), Image.Resampling.LANCZOS)
-                    ctk_bg_image = ctk.CTkImage(light_image=bg_image, dark_image=bg_image, size=(scroll_width, scroll_height))
-                    
-                    # Remove old background label if exists
-                    if hasattr(self, 'bg_label'):
-                        self.bg_label.destroy()
-                    
-                    # Create a background label inside the scrollable frame
-                    self.bg_label = ctk.CTkLabel(self.main_scrollable, image=ctk_bg_image, text="")
-                    self.bg_label.place(x=0, y=0, relwidth=1, relheight=1)
-                    self.bg_label.lower()  # Send to back
-                    
-                    # Make all section frames transparent so background shows through
-                    for widget in self.main_scrollable.winfo_children():
-                        if isinstance(widget, ctk.CTkFrame):
-                            widget.configure(fg_color="transparent")
-                    
-                    self.log_to_console(f"Background image applied with transparent sections ({scroll_width}x{scroll_height})", "SUCCESS")
-                else:
-                    self.log_to_console("Main scrollable frame not found for background image", "ERROR")
-                
-            else:
-                # Remove background image
-                if hasattr(self, 'bg_label'):
-                    self.bg_label.destroy()
-                    delattr(self, 'bg_label')
-                    
-                    # Restore section frame backgrounds
-                    if hasattr(self, 'main_scrollable'):
-                        for widget in self.main_scrollable.winfo_children():
-                            if isinstance(widget, ctk.CTkFrame):
-                                widget.configure(fg_color=("gray95", "gray15"))
-                    
-                    self.log_to_console("Background image cleared and backgrounds restored", "SUCCESS")
-                    
-        except Exception as e:
-            self.log_to_console(f"Failed to apply background image: {e}", "ERROR")
+        """Disabled - background image feature removed"""
+        pass
     
     def on_window_resize(self, event):
-        """Handle window resize events to update background image"""
-        # Only update if we have a background image and this is a resize event
-        if self.custom_bg_image.get():
-            # Debounce rapid resize events
-            if hasattr(self, '_resize_timer'):
-                self.after_cancel(self._resize_timer)
-            
-            self._resize_timer = self.after(100, self.update_background_size)
-    
-    def update_background_size(self):
-        """Update background image size when window is resized"""
-        try:
-            if self.custom_bg_image.get() and hasattr(self, 'bg_label') and hasattr(self, 'main_scrollable'):
-                from PIL import Image
-                
-                # Reload and resize image to scrollable frame size
-                bg_image = Image.open(self.custom_bg_image.get())
-                scroll_width = self.main_scrollable.winfo_width()
-                scroll_height = self.main_scrollable.winfo_height()
-                
-                if scroll_width > 1 and scroll_height > 1:
-                    bg_image = bg_image.resize((scroll_width, scroll_height), Image.Resampling.LANCZOS)
-                    ctk_bg_image = ctk.CTkImage(light_image=bg_image, dark_image=bg_image, size=(scroll_width, scroll_height))
-                    
-                    # Destroy old label and create new one
-                    if hasattr(self, 'bg_label'):
-                        self.bg_label.destroy()
-                    
-                    self.bg_label = ctk.CTkLabel(self.main_scrollable, image=ctk_bg_image, text="")
-                    self.bg_label.place(x=0, y=0, relwidth=1, relheight=1)
-                    self.bg_label.lower()
-                    
-                    # Keep sections transparent
-                    for widget in self.main_scrollable.winfo_children():
-                        if isinstance(widget, ctk.CTkFrame):
-                            widget.configure(fg_color="transparent")
-        except Exception as e:
-            pass  # Silently fail on resize to avoid spamming errors
+        """Handle window resize events"""
+        pass  # Background resizing disabled due to performance issues
     
     def update_font_size(self, size):
         """Update font size throughout the application"""
@@ -3007,7 +3274,8 @@ echo "export PATH=\"$PATH:{user_bin}\""
             buttons_to_update = [
                 'launch_btn', 'download_btn', 'options_btn', 'folder_btn',
                 'details_toggle_btn', 'settings_toggle_btn', 'console_toggle_btn',
-                'clear_console_btn', 'save_settings_btn'
+                'clear_console_btn', 'save_settings_btn', 'download_clients_btn',
+                'refresh_btn', 'delete_btn'
             ]
             
             # Update specific buttons
