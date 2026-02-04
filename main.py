@@ -59,6 +59,17 @@ class TitanicLauncher(ctk.CTk):
         self.appearance_mode = ctk.StringVar(value="dark")
         self.accent_color = ctk.StringVar(value="blue")
         
+        # Visual customization variables
+        self.custom_bg_image = ctk.StringVar(value="")
+        self.custom_font_size = ctk.IntVar(value=12)
+        self.button_corner_radius = ctk.IntVar(value=8)
+        self.sidebar_width = ctk.IntVar(value=250)
+        
+        # Layout customization variables
+        self.sidebar_position = ctk.StringVar(value="left")
+        self.custom_window_width = ctk.IntVar(value=1000)
+        self.custom_window_height = ctk.IntVar(value=700)
+        
         # Authentication variables
         self.auth_token = None
         self.user_data = {}
@@ -77,6 +88,10 @@ class TitanicLauncher(ctk.CTk):
         self.load_auth_config()
         self.load_config()
         self.load_versions()
+        self.load_customization_config()
+        
+        # Bind window resize event to update background
+        self.bind("<Configure>", self.on_window_resize)
 
     def setup_ui(self):
         # === SIDEBAR ===
@@ -1398,18 +1413,18 @@ class TitanicLauncher(ctk.CTk):
         # Create options window
         options_window = ctk.CTkToplevel(self)
         options_window.title("Options")
-        options_window.geometry("500x606")
+        options_window.geometry("500x700")  # Increased height for more content
         options_window.transient(self)
         
-        # Main frame
-        main_frame = ctk.CTkFrame(options_window)
-        main_frame.pack(fill="both", expand=True, padx=20, pady=20)
+        # Create scrollable frame for all content
+        scrollable_frame = ctk.CTkScrollableFrame(options_window, width=460, height=650)
+        scrollable_frame.pack(fill="both", expand=True, padx=20, pady=20)
         
         # Title
-        ctk.CTkLabel(main_frame, text="Options", font=ctk.CTkFont(size=24, weight="bold")).pack(pady=(10, 20))
+        ctk.CTkLabel(scrollable_frame, text="Options", font=ctk.CTkFont(size=24, weight="bold")).pack(pady=(10, 20))
         
         # Appearance section
-        appearance_frame = ctk.CTkFrame(main_frame)
+        appearance_frame = ctk.CTkFrame(scrollable_frame)
         appearance_frame.pack(fill="x", pady=(0, 20))
         
         ctk.CTkLabel(appearance_frame, text="Appearance", font=ctk.CTkFont(size=18, weight="bold")).pack(anchor="w", padx=10, pady=(10, 5))
@@ -1448,8 +1463,137 @@ class TitanicLauncher(ctk.CTk):
         )
         color_menu.pack(side="left", padx=10)
         
+        # Visual Customization section
+        visual_frame = ctk.CTkFrame(scrollable_frame)
+        visual_frame.pack(fill="x", pady=(0, 20))
+        
+        ctk.CTkLabel(visual_frame, text="Visual Customization", font=ctk.CTkFont(size=18, weight="bold")).pack(anchor="w", padx=10, pady=(10, 5))
+        
+        # Custom background image
+        bg_frame = ctk.CTkFrame(visual_frame)
+        bg_frame.pack(fill="x", padx=10, pady=5)
+        
+        ctk.CTkLabel(bg_frame, text="Background Image:", font=ctk.CTkFont(weight="bold")).pack(side="left", padx=10)
+        
+        bg_btn = ctk.CTkButton(
+            bg_frame,
+            text="Choose Image",
+            width=100,
+            command=self.choose_background_image
+        )
+        bg_btn.pack(side="left", padx=10)
+        
+        bg_clear_btn = ctk.CTkButton(
+            bg_frame,
+            text="Clear",
+            width=60,
+            fg_color="#dc3545",
+            hover_color="#c82333",
+            command=self.clear_background_image
+        )
+        bg_clear_btn.pack(side="left", padx=5)
+        
+        # Font size
+        font_frame = ctk.CTkFrame(visual_frame)
+        font_frame.pack(fill="x", padx=10, pady=5)
+        
+        ctk.CTkLabel(font_frame, text="Font Size:", font=ctk.CTkFont(weight="bold")).pack(side="left", padx=10)
+        
+        font_slider = ctk.CTkSlider(
+            font_frame,
+            from_=8,
+            to=20,
+            variable=self.custom_font_size,
+            command=lambda value: self.update_font_size(int(value))
+        )
+        font_slider.pack(side="left", padx=10, fill="x", expand=True)
+        
+        font_label = ctk.CTkLabel(font_frame, textvariable=self.custom_font_size, width=30)
+        font_label.pack(side="left", padx=5)
+        
+        # Button corner radius
+        corner_frame = ctk.CTkFrame(visual_frame)
+        corner_frame.pack(fill="x", padx=10, pady=5)
+        
+        ctk.CTkLabel(corner_frame, text="Button Corner Radius:", font=ctk.CTkFont(weight="bold")).pack(side="left", padx=10)
+        
+        corner_slider = ctk.CTkSlider(
+            corner_frame,
+            from_=0,
+            to=20,
+            variable=self.button_corner_radius,
+            command=lambda value: self.update_corner_radius(int(value))
+        )
+        corner_slider.pack(side="left", padx=10, fill="x", expand=True)
+        
+        corner_label = ctk.CTkLabel(corner_frame, textvariable=self.button_corner_radius, width=30)
+        corner_label.pack(side="left", padx=5)
+        
+        # Layout Customization section
+        layout_frame = ctk.CTkFrame(scrollable_frame)
+        layout_frame.pack(fill="x", pady=(0, 20))
+        
+        ctk.CTkLabel(layout_frame, text="Layout Customization", font=ctk.CTkFont(size=18, weight="bold")).pack(anchor="w", padx=10, pady=(10, 5))
+        
+        # Sidebar position
+        sidebar_pos_frame = ctk.CTkFrame(layout_frame)
+        sidebar_pos_frame.pack(fill="x", padx=10, pady=5)
+        
+        ctk.CTkLabel(sidebar_pos_frame, text="Sidebar Position:", font=ctk.CTkFont(weight="bold")).pack(side="left", padx=10)
+        
+        sidebar_pos_menu = ctk.CTkOptionMenu(
+            sidebar_pos_frame,
+            variable=self.sidebar_position,
+            values=["left", "right"],
+            command=lambda choice: self.update_sidebar_position(choice)
+        )
+        sidebar_pos_menu.pack(side="left", padx=10)
+        
+        # Sidebar width
+        sidebar_width_frame = ctk.CTkFrame(layout_frame)
+        sidebar_width_frame.pack(fill="x", padx=10, pady=5)
+        
+        ctk.CTkLabel(sidebar_width_frame, text="Sidebar Width:", font=ctk.CTkFont(weight="bold")).pack(side="left", padx=10)
+        
+        sidebar_width_slider = ctk.CTkSlider(
+            sidebar_width_frame,
+            from_=200,
+            to=400,
+            variable=self.sidebar_width,
+            command=lambda value: self.update_sidebar_width(int(value))
+        )
+        sidebar_width_slider.pack(side="left", padx=10, fill="x", expand=True)
+        
+        sidebar_width_label = ctk.CTkLabel(sidebar_width_frame, textvariable=self.sidebar_width, width=40)
+        sidebar_width_label.pack(side="left", padx=5)
+        
+        # Window size
+        window_size_frame = ctk.CTkFrame(layout_frame)
+        window_size_frame.pack(fill="x", padx=10, pady=5)
+        
+        ctk.CTkLabel(window_size_frame, text="Window Size:", font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=10, pady=(5, 2))
+        
+        size_controls = ctk.CTkFrame(window_size_frame)
+        size_controls.pack(fill="x", padx=20, pady=2)
+        
+        ctk.CTkLabel(size_controls, text="Width:").pack(side="left", padx=5)
+        width_entry = ctk.CTkEntry(size_controls, textvariable=self.custom_window_width, width=80)
+        width_entry.pack(side="left", padx=5)
+        
+        ctk.CTkLabel(size_controls, text="Height:").pack(side="left", padx=5)
+        height_entry = ctk.CTkEntry(size_controls, textvariable=self.custom_window_height, width=80)
+        height_entry.pack(side="left", padx=5)
+        
+        apply_size_btn = ctk.CTkButton(
+            size_controls,
+            text="Apply",
+            width=60,
+            command=self.apply_window_size
+        )
+        apply_size_btn.pack(side="left", padx=10)
+        
         # Tools section
-        tools_frame = ctk.CTkFrame(main_frame)
+        tools_frame = ctk.CTkFrame(scrollable_frame)
         tools_frame.pack(fill="x", pady=(0, 20))
         
         ctk.CTkLabel(tools_frame, text="Tools", font=ctk.CTkFont(size=18, weight="bold")).pack(anchor="w", padx=10, pady=(10, 5))
@@ -1525,7 +1669,7 @@ class TitanicLauncher(ctk.CTk):
             run_help_label.pack(pady=(0, 5))
         
         # Help text
-        help_text = ctk.CTkTextbox(main_frame, height=80, font=ctk.CTkFont(size=10))
+        help_text = ctk.CTkTextbox(scrollable_frame, height=80, font=ctk.CTkFont(size=10))
         help_text.pack(fill="x", pady=(0, 20))
         
         # Different help text for Windows vs Linux
@@ -1546,7 +1690,7 @@ class TitanicLauncher(ctk.CTk):
         help_text.configure(state="disabled")
         
         # Close button
-        close_btn = ctk.CTkButton(main_frame, text="Close", command=options_window.destroy, fg_color="#6c757d")
+        close_btn = ctk.CTkButton(scrollable_frame, text="Close", command=options_window.destroy, fg_color="#6c757d")
         close_btn.pack(pady=(10, 0))
         
         # Set grab after window is fully configured
@@ -2683,6 +2827,375 @@ echo "export PATH=\"$PATH:{user_bin}\""
             self.after(0, lambda: messagebox.showerror("Import Error", f"Failed to import client: {str(e)}"))
             self.after(0, lambda: self.status_text.set("Import failed"))
             self.log_to_console(f"Import failed: {str(e)}", "ERROR")
+
+    # === CUSTOMIZATION FUNCTIONS ===
+    
+    def choose_background_image(self):
+        """Choose a custom background image"""
+        from tkinter import filedialog
+        file_path = filedialog.askopenfilename(
+            title="Choose Background Image",
+            filetypes=[
+                ("Image files", "*.png *.jpg *.jpeg *.gif *.bmp"),
+                ("PNG files", "*.png"),
+                ("JPEG files", "*.jpg *.jpeg"),
+                ("All files", "*.*")
+            ]
+        )
+        
+        if file_path:
+            self.custom_bg_image.set(file_path)
+            self.apply_background_image()
+            self.save_customization_config()
+    
+    def clear_background_image(self):
+        """Clear the custom background image"""
+        self.custom_bg_image.set("")
+        self.apply_background_image()
+        self.save_customization_config()
+    
+    def apply_background_image(self):
+        """Apply the custom background image using a background label"""
+        try:
+            if self.custom_bg_image.get():
+                from PIL import Image
+                
+                # Load and set background image
+                bg_image = Image.open(self.custom_bg_image.get())
+                
+                # Target the main scrollable frame
+                if hasattr(self, 'main_scrollable'):
+                    # Get scrollable frame size
+                    scroll_width = 750  # Default size
+                    scroll_height = 550  # Default size
+                    
+                    # Try to get actual size if available
+                    try:
+                        scroll_width = self.main_scrollable.winfo_width()
+                        scroll_height = self.main_scrollable.winfo_height()
+                        if scroll_width <= 1:
+                            scroll_width = 750
+                        if scroll_height <= 1:
+                            scroll_height = 550
+                    except:
+                        pass
+                    
+                    bg_image = bg_image.resize((scroll_width, scroll_height), Image.Resampling.LANCZOS)
+                    ctk_bg_image = ctk.CTkImage(light_image=bg_image, dark_image=bg_image, size=(scroll_width, scroll_height))
+                    
+                    # Remove old background label if exists
+                    if hasattr(self, 'bg_label'):
+                        self.bg_label.destroy()
+                    
+                    # Create a background label inside the scrollable frame
+                    self.bg_label = ctk.CTkLabel(self.main_scrollable, image=ctk_bg_image, text="")
+                    self.bg_label.place(x=0, y=0, relwidth=1, relheight=1)
+                    self.bg_label.lower()  # Send to back
+                    
+                    # Make all section frames transparent so background shows through
+                    for widget in self.main_scrollable.winfo_children():
+                        if isinstance(widget, ctk.CTkFrame):
+                            widget.configure(fg_color="transparent")
+                    
+                    self.log_to_console(f"Background image applied with transparent sections ({scroll_width}x{scroll_height})", "SUCCESS")
+                else:
+                    self.log_to_console("Main scrollable frame not found for background image", "ERROR")
+                
+            else:
+                # Remove background image
+                if hasattr(self, 'bg_label'):
+                    self.bg_label.destroy()
+                    delattr(self, 'bg_label')
+                    
+                    # Restore section frame backgrounds
+                    if hasattr(self, 'main_scrollable'):
+                        for widget in self.main_scrollable.winfo_children():
+                            if isinstance(widget, ctk.CTkFrame):
+                                widget.configure(fg_color=("gray95", "gray15"))
+                    
+                    self.log_to_console("Background image cleared and backgrounds restored", "SUCCESS")
+                    
+        except Exception as e:
+            self.log_to_console(f"Failed to apply background image: {e}", "ERROR")
+    
+    def on_window_resize(self, event):
+        """Handle window resize events to update background image"""
+        # Only update if we have a background image and this is a resize event
+        if self.custom_bg_image.get():
+            # Debounce rapid resize events
+            if hasattr(self, '_resize_timer'):
+                self.after_cancel(self._resize_timer)
+            
+            self._resize_timer = self.after(100, self.update_background_size)
+    
+    def update_background_size(self):
+        """Update background image size when window is resized"""
+        try:
+            if self.custom_bg_image.get() and hasattr(self, 'bg_label') and hasattr(self, 'main_scrollable'):
+                from PIL import Image
+                
+                # Reload and resize image to scrollable frame size
+                bg_image = Image.open(self.custom_bg_image.get())
+                scroll_width = self.main_scrollable.winfo_width()
+                scroll_height = self.main_scrollable.winfo_height()
+                
+                if scroll_width > 1 and scroll_height > 1:
+                    bg_image = bg_image.resize((scroll_width, scroll_height), Image.Resampling.LANCZOS)
+                    ctk_bg_image = ctk.CTkImage(light_image=bg_image, dark_image=bg_image, size=(scroll_width, scroll_height))
+                    
+                    # Destroy old label and create new one
+                    if hasattr(self, 'bg_label'):
+                        self.bg_label.destroy()
+                    
+                    self.bg_label = ctk.CTkLabel(self.main_scrollable, image=ctk_bg_image, text="")
+                    self.bg_label.place(x=0, y=0, relwidth=1, relheight=1)
+                    self.bg_label.lower()
+                    
+                    # Keep sections transparent
+                    for widget in self.main_scrollable.winfo_children():
+                        if isinstance(widget, ctk.CTkFrame):
+                            widget.configure(fg_color="transparent")
+        except Exception as e:
+            pass  # Silently fail on resize to avoid spamming errors
+    
+    def update_font_size(self, size):
+        """Update font size throughout the application"""
+        try:
+            # Create new font with specified size
+            new_font = ctk.CTkFont(size=size)
+            
+            # Update main title in sidebar
+            if hasattr(self, 'sidebar_frame'):
+                for widget in self.sidebar_frame.winfo_children():
+                    if isinstance(widget, ctk.CTkLabel):
+                        widget.configure(font=new_font)
+            
+            # Update section headers by finding them directly
+            section_headers = {
+                'Version Information': 'details',
+                'Version Settings': 'settings', 
+                'Console Output': 'console'
+            }
+            
+            # Search through all widgets to find section headers
+            for widget in self.main_scrollable.winfo_children():
+                if isinstance(widget, ctk.CTkFrame):
+                    for child in widget.winfo_children():
+                        if isinstance(child, ctk.CTkLabel):
+                            text = child.cget("text")
+                            if any(header in text for header in section_headers.keys()):
+                                child.configure(font=ctk.CTkFont(size=size, weight="bold"))
+            
+            # Update description text if exists
+            if hasattr(self, 'description_text'):
+                self.description_text.configure(font=ctk.CTkFont(size=size))
+            
+            # Update console text if exists
+            if hasattr(self, 'console_text'):
+                self.console_text.configure(font=ctk.CTkFont(family="Courier", size=size))
+            
+            self.save_customization_config()
+            self.log_to_console(f"Font size updated to {size}", "SUCCESS")
+            
+        except Exception as e:
+            self.log_to_console(f"Failed to update font size: {e}", "ERROR")
+    
+    def update_corner_radius(self, radius):
+        """Update button corner radius"""
+        try:
+            # List of specific buttons to update
+            buttons_to_update = [
+                'launch_btn', 'download_btn', 'options_btn', 'folder_btn',
+                'details_toggle_btn', 'settings_toggle_btn', 'console_toggle_btn',
+                'clear_console_btn', 'save_settings_btn'
+            ]
+            
+            # Update specific buttons
+            for button_name in buttons_to_update:
+                if hasattr(self, button_name):
+                    try:
+                        button = getattr(self, button_name)
+                        button.configure(corner_radius=radius)
+                    except:
+                        pass
+            
+            # Update version buttons in sidebar
+            if hasattr(self, 'version_buttons'):
+                for version_name, button_frame in self.version_buttons.items():
+                    for child in button_frame.winfo_children():
+                        if isinstance(child, ctk.CTkButton):
+                            child.configure(corner_radius=radius)
+            
+            self.save_customization_config()
+            self.log_to_console(f"Button corner radius updated to {radius}", "SUCCESS")
+            
+        except Exception as e:
+            self.log_to_console(f"Failed to update corner radius: {e}", "ERROR")
+    
+    def apply_corner_radius_recursive(self, widget, radius):
+        """Recursively apply corner radius to all CTkButton widgets"""
+        if hasattr(widget, 'configure'):
+            try:
+                config = widget.configure()
+                if config and 'corner_radius' in config:
+                    widget.configure(corner_radius=radius)
+            except:
+                pass  # Some widgets might not support corner_radius
+        
+        for child in widget.winfo_children():
+            self.apply_corner_radius_recursive(child, radius)
+    
+    def update_sidebar_position(self, position):
+        """Update sidebar position (left/right)"""
+        try:
+            if position == "right":
+                # Move sidebar to right
+                self.sidebar_frame.grid_forget()
+                self.sidebar_frame.grid(row=0, column=1, sticky="nsew")
+                # Move main content to left
+                self.main_frame.grid_forget()
+                self.main_frame.grid(row=0, column=0, sticky="nsew")
+                # Adjust column weights - main content gets most space
+                self.grid_columnconfigure(0, weight=1)  # Main content
+                self.grid_columnconfigure(1, weight=0)   # Sidebar (fixed width)
+                self.log_to_console("Sidebar moved to right", "SUCCESS")
+            else:
+                # Move sidebar to left (default)
+                self.sidebar_frame.grid_forget()
+                self.sidebar_frame.grid(row=0, column=0, sticky="nsew")
+                # Move main content to right
+                self.main_frame.grid_forget()
+                self.main_frame.grid(row=0, column=1, sticky="nsew")
+                # Adjust column weights - main content gets most space
+                self.grid_columnconfigure(0, weight=0)   # Sidebar (fixed width)
+                self.grid_columnconfigure(1, weight=1)  # Main content
+                self.log_to_console("Sidebar moved to left", "SUCCESS")
+            
+            self.save_customization_config()
+            
+        except Exception as e:
+            self.log_to_console(f"Failed to update sidebar position: {e}", "ERROR")
+            messagebox.showerror("Error", f"Failed to update sidebar position: {e}")
+    
+    def update_sidebar_width(self, width):
+        """Update sidebar width"""
+        try:
+            self.sidebar_frame.configure(width=width)
+            # Force grid update to take effect
+            self.sidebar_frame.grid_columnconfigure(0, minsize=width)
+            self.save_customization_config()
+        except Exception as e:
+            self.log_to_console(f"Failed to update sidebar width: {e}", "ERROR")
+    
+    def update_section_visibility(self):
+        """Update visibility of main sections"""
+        try:
+            # Update details section
+            if hasattr(self, 'details_frame'):
+                if not self.show_details_section.get():
+                    self.details_frame.pack_forget()
+                else:
+                    # Make sure it's in the correct order
+                    self.details_frame.pack(fill="both", expand=True, padx=20, pady=10, before=self.settings_frame if hasattr(self, 'settings_frame') else None)
+            
+            # Update settings section
+            if hasattr(self, 'settings_frame'):
+                if not self.show_settings_section.get():
+                    self.settings_frame.pack_forget()
+                else:
+                    self.settings_frame.pack(fill="x", padx=20, pady=(0, 20), before=self.console_frame if hasattr(self, 'console_frame') else None)
+            
+            # Update console section
+            if hasattr(self, 'console_frame'):
+                if not self.show_console_section.get():
+                    self.console_frame.pack_forget()
+                else:
+                    self.console_frame.pack(fill="x", padx=20, pady=(0, 20))
+            
+            # Save the settings immediately
+            self.save_customization_config()
+            self.log_to_console("Section visibility updated and saved", "SUCCESS")
+            
+        except Exception as e:
+            self.log_to_console(f"Failed to update section visibility: {e}", "ERROR")
+    
+    def apply_window_size(self):
+        """Apply custom window size"""
+        try:
+            width = self.custom_window_width.get()
+            height = self.custom_window_height.get()
+            
+            # Validate dimensions
+            if width < 400 or height < 300:
+                messagebox.showerror("Error", "Window size too small. Minimum: 400x300")
+                return
+            
+            if width > 2000 or height > 1500:
+                messagebox.showerror("Error", "Window size too large. Maximum: 2000x1500")
+                return
+            
+            # Apply new size
+            self.geometry(f"{width}x{height}")
+            self.save_customization_config()
+            self.log_to_console(f"Window size set to {width}x{height}", "SUCCESS")
+            
+        except Exception as e:
+            self.log_to_console(f"Failed to set window size: {e}", "ERROR")
+            messagebox.showerror("Error", f"Failed to set window size: {e}")
+    
+    def save_customization_config(self):
+        """Save customization settings to config"""
+        customization = {
+            'custom_bg_image': self.custom_bg_image.get(),
+            'custom_font_size': self.custom_font_size.get(),
+            'button_corner_radius': self.button_corner_radius.get(),
+            'sidebar_width': self.sidebar_width.get(),
+            'sidebar_position': self.sidebar_position.get(),
+            'custom_window_width': self.custom_window_width.get(),
+            'custom_window_height': self.custom_window_height.get()
+        }
+        self.version_configs['_customization'] = customization
+        self.save_config()
+    
+    def load_customization_config(self):
+        """Load customization settings from config"""
+        customization = self.version_configs.get('_customization', {})
+        
+        if customization:
+            self.custom_bg_image.set(customization.get('custom_bg_image', ''))
+            self.custom_font_size.set(customization.get('custom_font_size', 12))
+            self.button_corner_radius.set(customization.get('button_corner_radius', 8))
+            self.sidebar_width.set(customization.get('sidebar_width', 250))
+            self.sidebar_position.set(customization.get('sidebar_position', 'left'))
+            self.custom_window_width.set(customization.get('custom_window_width', 1000))
+            self.custom_window_height.set(customization.get('custom_window_height', 700))
+            
+            # Apply loaded settings after UI is fully ready
+            self.after(100, self.apply_loaded_customizations)
+    
+    def apply_loaded_customizations(self):
+        """Apply customization settings after UI is ready"""
+        try:
+            # Apply background image
+            self.apply_background_image()
+            
+            # Apply corner radius
+            self.update_corner_radius(self.button_corner_radius.get())
+            
+            # Apply sidebar width
+            self.update_sidebar_width(self.sidebar_width.get())
+            
+            # Apply window size
+            self.geometry(f"{self.custom_window_width.get()}x{self.custom_window_height.get()}")
+            
+            # Apply font size
+            self.update_font_size(self.custom_font_size.get())
+            
+            # Apply sidebar position
+            self.update_sidebar_position(self.sidebar_position.get())
+            
+        except Exception as e:
+            self.log_to_console(f"Failed to apply loaded customizations: {e}", "ERROR")
 
 def main():
     app = TitanicLauncher()
